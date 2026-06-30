@@ -23,40 +23,35 @@
 //!
 //! # Easiest setup: compact lines to stdout
 //!
-//! When you just want logs off the edge with no BigQuery schema to maintain,
-//! one call installs a compact stdout subscriber (the platform forwards stdout
-//! to your configured logging endpoint):
+//! When you just want logs off the edge with no BigQuery schema to maintain, a
+//! compact stdout `fmt` layer is enough (on Compute, the platform forwards
+//! stdout to your configured logging endpoint):
 //!
 //! ```ignore
-//! tracing_fastly::init_stdout();
+//! use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+//!
+//! tracing_subscriber::registry()
+//!     .with(EnvFilter::from_default_env())
+//!     .with(fmt::layer().compact().with_ansi(false))
+//!     .init();
 //! ```
 //!
-//! Or write straight to a named Fastly endpoint — the `tracing` analog of
-//! `log_fastly`'s `default_endpoint` — or tee to both stdout and an endpoint
-//! with one layer:
-//!
-//! ```ignore
-//! use tracing_subscriber::fmt::writer::MakeWriterExt;
-//! use tracing_fastly::setup::EndpointWriter;
-//!
-//! tracing_fastly::init_endpoint("my_log_endpoint");                       // endpoint only
-//! tracing_fastly::setup::init(std::io::stdout.and(EndpointWriter::new("my_log_endpoint"))); // both
-//! ```
-//!
-//! There is a single format ([`setup::compact_layer`]); the destination is
-//! just the writer you give it. See the [`setup`] module.
+//! To write straight to a named Fastly endpoint instead — or tee to both
+//! stdout and an endpoint from one layer — point the writer at an
+//! [`EndpointWriter`]. The destination is just the writer; the format stays in
+//! one `fmt` layer. See the [`setup`] module for those variants.
 //!
 //! # Full setup: structured rows to BigQuery
 //!
 //! ```ignore
-//! use tracing_subscriber::prelude::*;
+//! use tracing_subscriber::{fmt, prelude::*};
 //!
 //! let sink = MyBqSink { service_name: "my_service".into() };
 //! let layer = tracing_fastly::CorrelationLayer::new(sink).correlate("request_id");
 //!
 //! tracing_subscriber::registry()
-//!     .with(tracing_fastly::setup::compact_layer(std::io::stdout)) // human stdout for `fastly log-tail`
-//!     .with(layer)                                                 // structured rows to BigQuery
+//!     .with(fmt::layer().compact().with_ansi(false)) // human stdout for `fastly log-tail`
+//!     .with(layer)                                    // structured rows to BigQuery
 //!     .init();
 //! ```
 
@@ -69,5 +64,5 @@ pub mod setup;
 
 pub use event::{CorrelationFields, StructuredEvent};
 pub use layer::CorrelationLayer;
-pub use setup::{EndpointWriter, init, init_endpoint, init_stdout, try_init};
+pub use setup::EndpointWriter;
 pub use sink::EventSink;
