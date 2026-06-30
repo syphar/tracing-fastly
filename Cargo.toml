@@ -8,11 +8,10 @@ fastly = "0.13.0"
 fastly-shared = "0.13.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.137"
-serde_with = "3.21.0"
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3.16", default-features = false, features = ["fmt", "json", "env-filter"] }
 
 [dev-dependencies]
+# Used only by the examples (BigQuery row schemas), not the library itself.
+serde_with = "3.21.0"
 pretty_assertions = "1.4.1"
-test-case = "3.3.1"
-tracing-test = "0.2.5"
