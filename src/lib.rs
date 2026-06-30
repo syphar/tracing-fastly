@@ -31,14 +31,20 @@
 //! tracing_fastly::init_stdout();
 //! ```
 //!
-//! Or write formatted lines straight to a named Fastly endpoint — the
-//! `tracing` analog of `log_fastly`'s `default_endpoint`:
+//! Or write straight to a named Fastly endpoint — the `tracing` analog of
+//! `log_fastly`'s `default_endpoint` — or tee to both stdout and an endpoint
+//! with one layer:
 //!
 //! ```ignore
-//! tracing_fastly::init_endpoint("my_log_endpoint");
+//! use tracing_subscriber::fmt::writer::MakeWriterExt;
+//! use tracing_fastly::setup::EndpointWriter;
+//!
+//! tracing_fastly::init_endpoint("my_log_endpoint");                       // endpoint only
+//! tracing_fastly::setup::init(std::io::stdout.and(EndpointWriter::new("my_log_endpoint"))); // both
 //! ```
 //!
-//! See the [`setup`] module for the building-block layers behind these.
+//! There is a single format ([`setup::compact_layer`]); the destination is
+//! just the writer you give it. See the [`setup`] module.
 //!
 //! # Full setup: structured rows to BigQuery
 //!
@@ -49,8 +55,8 @@
 //! let layer = tracing_fastly::CorrelationLayer::new(sink).correlate("request_id");
 //!
 //! tracing_subscriber::registry()
-//!     .with(tracing_fastly::setup::compact_stdout_layer()) // human stdout for `fastly log-tail`
-//!     .with(layer)                                         // structured rows to BigQuery
+//!     .with(tracing_fastly::setup::compact_layer(std::io::stdout)) // human stdout for `fastly log-tail`
+//!     .with(layer)                                                 // structured rows to BigQuery
 //!     .init();
 //! ```
 
@@ -63,5 +69,5 @@ pub mod setup;
 
 pub use event::{CorrelationFields, StructuredEvent};
 pub use layer::CorrelationLayer;
-pub use setup::{init_endpoint, init_stdout, try_init_endpoint, try_init_stdout};
+pub use setup::{EndpointWriter, init, init_endpoint, init_stdout, try_init};
 pub use sink::EventSink;

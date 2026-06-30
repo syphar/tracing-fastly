@@ -5,26 +5,37 @@
 //! want something far simpler: compact, human-readable lines that leave the
 //! edge with no row schema to maintain. That's what this module is for.
 //!
-//! # Two destinations
+//! # One format, choose the writer
 //!
-//! - [`init_stdout`] — write to **stdout**. On Fastly Compute the platform
-//!   captures stdout and forwards it to whichever logging endpoint you've
-//!   configured as the service's stdout destination. Nothing in code names an
-//!   endpoint; it's a service-config setting. This is the easiest path.
-//! - [`init_endpoint`] / [`EndpointWriter`] — write formatted lines straight
-//!   to a **named Fastly endpoint** from code. This is the direct analog of
-//!   [`log_fastly::Builder::default_endpoint`], but for `tracing`'s `fmt`
-//!   output instead of the `log` façade.
+//! There is a single log *format* — [`compact_layer`], one compact `fmt`
+//! layer. Where its lines go is a property of the **writer** you give it, not
+//! a different layer:
 //!
-//! Both default the level to `INFO`, overridable via the `RUST_LOG`
-//! environment variable. For anything more (custom format, multiple layers,
-//! the BigQuery sink) compose the layers yourself — [`compact_stdout_layer`]
-//! and [`compact_endpoint_layer`] are exposed for exactly that.
+//! - stdout — [`init_stdout`]. On Fastly Compute the platform captures stdout
+//!   and forwards it to whichever logging endpoint you've configured as the
+//!   service's stdout destination; no endpoint is named in code.
+//! - a named Fastly endpoint — [`init_endpoint`], via [`EndpointWriter`]. The
+//!   `tracing` analog of [`log_fastly::Builder::default_endpoint`].
+//! - **both at once** — tee the writers with
+//!   [`MakeWriterExt::and`](tracing_subscriber::fmt::writer::MakeWriterExt::and):
+//!
+//! ```ignore
+//! use tracing_subscriber::fmt::writer::MakeWriterExt;
+//! use tracing_fastly::setup::EndpointWriter;
+//!
+//! // One layer, one format, teed to stdout *and* the "my_logs" endpoint.
+//! tracing_fastly::setup::init(std::io::stdout.and(EndpointWriter::new("my_logs")));
+//! ```
+//!
+//! All inits default the level to `INFO`, overridable via the `RUST_LOG`
+//! environment variable. ANSI is disabled so the same bytes are valid whether
+//! they land in a terminal or a log file.
 //!
 //! [`log_fastly::Builder::default_endpoint`]:
 //! https://docs.rs/log-fastly/latest/log_fastly/struct.Builder.html
 
 use fastly::log::Endpoint;
+use std::io;
 use tracing::Subscriber;
 use tracing_subscriber::{
     EnvFilter,
@@ -45,32 +56,26 @@ fn env_filter() -> EnvFilter {
         .from_env_lossy()
 }
 
-/// A compact `fmt` layer writing to stdout — the building block behind
-/// [`init_stdout`]. Exposed so you can stack it with other layers (e.g. the
-/// BigQuery sink) in your own `registry()` chain.
-pub fn compact_stdout_layer<S>() -> impl Layer<S>
+/// The one log format: a compact, non-ANSI `fmt` layer writing to `writer`.
+///
+/// Point it at any [`MakeWriter`] — [`io::stdout`], an [`EndpointWriter`], or a
+/// tee of several via
+/// [`MakeWriterExt::and`](tracing_subscriber::fmt::writer::MakeWriterExt::and).
+/// Exposed so you can stack it with other layers (e.g. the BigQuery sink) in
+/// your own `registry()` chain.
+pub fn compact_layer<S, W>(writer: W) -> impl Layer<S>
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
+    W: for<'a> MakeWriter<'a> + Send + Sync + 'static,
 {
-    fmt::layer().compact()
-}
-
-/// A compact `fmt` layer writing formatted lines to the named Fastly log
-/// endpoint — the building block behind [`init_endpoint`]. ANSI is disabled
-/// since the destination isn't a terminal.
-pub fn compact_endpoint_layer<S>(endpoint: &'static str) -> impl Layer<S>
-where
-    S: Subscriber + for<'a> LookupSpan<'a>,
-{
-    fmt::layer()
-        .compact()
-        .with_ansi(false)
-        .with_writer(EndpointWriter::new(endpoint))
+    fmt::layer().compact().with_ansi(false).with_writer(writer)
 }
 
 /// A [`MakeWriter`] that sends each formatted log line to a named Fastly log
-/// endpoint. Writing to an endpoint the service doesn't define is silently
-/// dropped at the edge, so naming a missing endpoint is harmless.
+/// endpoint. Composes like any other writer — tee it with
+/// [`MakeWriterExt::and`](tracing_subscriber::fmt::writer::MakeWriterExt::and).
+/// Writing to an endpoint the service doesn't define is silently dropped at
+/// the edge, so naming a missing endpoint is harmless.
 #[derive(Clone, Copy, Debug)]
 pub struct EndpointWriter {
     endpoint: &'static str,
@@ -89,70 +94,81 @@ impl<'a> MakeWriter<'a> for EndpointWriter {
     }
 }
 
-/// Install a global subscriber writing compact lines to **stdout**.
+/// Install a global subscriber that writes the compact format to `writer`
+/// (`INFO` default, `RUST_LOG` override). The general entry point — pass
+/// [`io::stdout`], an [`EndpointWriter`], or a tee of both.
 ///
-/// The simplest setup: on Compute, stdout is forwarded to the logging endpoint
-/// configured as the service's stdout destination, so this one call is enough
-/// to get logs off the edge. Level defaults to `INFO` (`RUST_LOG` overrides).
-///
-/// Panics if a global subscriber is already installed — call once, early in
-/// `main`. Use [`try_init_stdout`] to handle that case yourself.
-pub fn init_stdout() {
-    try_init_stdout().expect("a global tracing subscriber is already installed");
+/// Panics if a global subscriber is already installed; see [`try_init`].
+pub fn init<W>(writer: W)
+where
+    W: for<'a> MakeWriter<'a> + Send + Sync + 'static,
+{
+    try_init(writer).expect("a global tracing subscriber is already installed");
 }
 
-/// Fallible [`init_stdout`]: returns `Err` instead of panicking when a global
+/// Fallible [`init`]: returns `Err` instead of panicking when a global
 /// subscriber is already set.
-pub fn try_init_stdout() -> Result<(), TryInitError> {
+pub fn try_init<W>(writer: W) -> Result<(), TryInitError>
+where
+    W: for<'a> MakeWriter<'a> + Send + Sync + 'static,
+{
     tracing_subscriber::registry()
         .with(env_filter())
-        .with(compact_stdout_layer())
+        .with(compact_layer(writer))
         .try_init()
 }
 
-/// Install a global subscriber writing compact lines straight to the named
-/// Fastly log **endpoint** (rather than relying on stdout capture). The
-/// `tracing` analog of `log_fastly`'s `default_endpoint`.
-///
-/// Panics if a global subscriber is already installed; see
-/// [`try_init_endpoint`].
+/// Shortcut for `init(io::stdout)` — the simplest setup. On Compute, stdout is
+/// forwarded to the service's configured stdout endpoint.
+pub fn init_stdout() {
+    init(io::stdout);
+}
+
+/// Shortcut for `init(EndpointWriter::new(endpoint))` — write straight to a
+/// named Fastly endpoint.
 pub fn init_endpoint(endpoint: &'static str) {
-    try_init_endpoint(endpoint).expect("a global tracing subscriber is already installed");
-}
-
-/// Fallible [`init_endpoint`].
-pub fn try_init_endpoint(endpoint: &'static str) -> Result<(), TryInitError> {
-    tracing_subscriber::registry()
-        .with(env_filter())
-        .with(compact_endpoint_layer(endpoint))
-        .try_init()
+    init(EndpointWriter::new(endpoint));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use tracing::{info, info_span, subscriber::with_default};
+    use tracing_subscriber::fmt::writer::MakeWriterExt;
 
-    // Global init can only run once per process, so exercise the layers with a
-    // scoped (thread-local) subscriber instead. These confirm the layers build
-    // and emit without panicking; under viceroy the writes are real.
+    // Global init can only run once per process, so exercise the layer with a
+    // scoped (thread-local) subscriber. These confirm the layer builds and
+    // emits without panicking for each writer shape; under viceroy the writes
+    // are real.
 
-    #[test]
-    fn stdout_layer_emits() {
-        let subscriber = tracing_subscriber::registry().with(compact_stdout_layer());
-        with_default(subscriber, || {
-            let span = info_span!("req", request_id = "abc");
-            let _g = span.enter();
-            info!(status = 200, "handled");
-        });
+    fn emit() {
+        let span = info_span!("req", request_id = "abc");
+        let _g = span.enter();
+        info!(status = 200, "handled");
     }
 
     #[test]
-    fn endpoint_layer_emits() {
-        let subscriber =
-            tracing_subscriber::registry().with(compact_endpoint_layer("test_endpoint"));
-        with_default(subscriber, || {
-            info!("to the endpoint");
-        });
+    fn to_stdout() {
+        with_default(
+            tracing_subscriber::registry().with(compact_layer(io::stdout)),
+            emit,
+        );
+    }
+
+    #[test]
+    fn to_endpoint() {
+        with_default(
+            tracing_subscriber::registry().with(compact_layer(EndpointWriter::new("test_ep"))),
+            emit,
+        );
+    }
+
+    #[test]
+    fn teed_to_both() {
+        let writer = io::stdout.and(EndpointWriter::new("test_ep"));
+        with_default(
+            tracing_subscriber::registry().with(compact_layer(writer)),
+            emit,
+        );
     }
 }

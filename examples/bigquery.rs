@@ -64,7 +64,7 @@ fn setup_logging(service_name: &str) {
     });
 
     tracing_subscriber::registry()
-        .with(tracing_fastly::setup::compact_stdout_layer())
+        .with(tracing_fastly::setup::compact_layer(std::io::stdout))
         .with(bq_layer)
         .init();
 }
