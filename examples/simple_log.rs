@@ -1,14 +1,17 @@
 //! Simplest setup: compact `tracing` output, no BigQuery row schema.
 //!
 //! One `fmt` layer defines the format; its writer is teed so the same lines go
-//! to **stdout** (for `fastly log-tail`) *and* a named Fastly log **endpoint**
-//! via [`EndpointWriter`]. Writing to an endpoint the service doesn't define is
-//! silently dropped at the edge, so naming a missing one is harmless.
+//! to **stdout** (for `fastly log-tail`) *and* a named Fastly log **endpoint**.
+//! `fmt` takes a [`MakeWriter`](tracing_subscriber::fmt::MakeWriter) — a
+//! per-line writer factory — and any closure `Fn() -> impl Write` is one, so a
+//! `|| Endpoint::from_name(...)` closure is all that's needed. Writing to an
+//! endpoint the service doesn't define is silently dropped at the edge, so
+//! naming a missing one is harmless.
 //!
 //! Run `cargo build --example simple_log` to type-check; the Fastly hostcalls
 //! only do anything inside the Compute runtime.
 
-use tracing_fastly::EndpointWriter;
+use fastly::log::Endpoint;
 use tracing_subscriber::{
     EnvFilter, filter::LevelFilter, fmt, fmt::writer::MakeWriterExt, prelude::*,
 };
@@ -18,7 +21,7 @@ const LOG_ENDPOINT: &str = "my_logs";
 /// Install the global subscriber: one compact, non-ANSI format teed to stdout
 /// and `LOG_ENDPOINT`. Level defaults to `INFO`, overridable via `RUST_LOG`.
 fn setup_logging() {
-    let writer = std::io::stdout.and(EndpointWriter::new(LOG_ENDPOINT));
+    let writer = std::io::stdout.and(|| Endpoint::from_name(LOG_ENDPOINT));
 
     tracing_subscriber::registry()
         .with(

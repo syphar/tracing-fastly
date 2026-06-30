@@ -18,8 +18,9 @@
 //! a concrete row type. You define a `#[derive(Serialize)]` struct whose
 //! fields are your columns, reuse the [`bq`] serializers, and write a small
 //! [`EventSink`] that maps a [`StructuredEvent`] onto it. See
-//! `examples/bigquery.rs` for the full worked example, including an
-//! access-log row that reuses the same helpers.
+//! `examples/bigquery.rs` for the full worked example, and
+//! `examples/access_log.rs` for a per-request access-log row that reuses the
+//! same helpers.
 //!
 //! # Easiest setup: compact lines to stdout
 //!
@@ -37,9 +38,23 @@
 //! ```
 //!
 //! To write straight to a named Fastly endpoint instead — or tee to both
-//! stdout and an endpoint from one layer — point the writer at an
-//! [`EndpointWriter`]. The destination is just the writer; the format stays in
-//! one `fmt` layer. See the [`setup`] module for those variants.
+//! stdout and an endpoint from one layer — set the layer's *writer*. `fmt`
+//! takes a [`MakeWriter`](tracing_subscriber::fmt::MakeWriter) (a per-line
+//! writer factory), and any closure `Fn() -> impl Write` is one;
+//! `fastly::log::Endpoint` is a `Write`, so:
+//!
+//! ```ignore
+//! use fastly::log::Endpoint;
+//! use tracing_subscriber::{fmt, fmt::writer::MakeWriterExt, prelude::*};
+//!
+//! // Straight to the endpoint:
+//! let to_endpoint = fmt::layer().compact().with_ansi(false)
+//!     .with_writer(|| Endpoint::from_name("my_logs"));
+//!
+//! // Or teed to stdout *and* the endpoint — one format, two destinations:
+//! let writer = std::io::stdout.and(|| Endpoint::from_name("my_logs"));
+//! let teed = fmt::layer().compact().with_ansi(false).with_writer(writer);
+//! ```
 //!
 //! # Full setup: structured rows to BigQuery
 //!
@@ -60,9 +75,7 @@ mod layer;
 mod sink;
 
 pub mod bq;
-pub mod setup;
 
 pub use event::{CorrelationFields, StructuredEvent};
 pub use layer::CorrelationLayer;
-pub use setup::EndpointWriter;
 pub use sink::EventSink;
