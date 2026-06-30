@@ -1,18 +1,3 @@
-//! Worked example: a per-request **access-log** row for BigQuery.
-//!
-//! Access logging isn't a `tracing` concern — it's "snapshot request fields,
-//! emit one row at request end" — so it's a free-standing recipe rather than
-//! library API. It reuses the same serde coercion helpers
-//! ([`tracing_fastly::bq`]) as the trace-log example (`examples/bigquery.rs`).
-//!
-//! The row schema is yours: keep [`AccessLog`]'s fields in lockstep with your
-//! BigQuery table. Endpoint names must match the `logging_bigquery` blocks on
-//! the Fastly service; writing to an unconfigured endpoint is dropped at the
-//! edge.
-//!
-//! Run `cargo build --example access_log` to type-check; the Fastly hostcalls
-//! only do anything inside the Compute runtime.
-
 use fastly::{
     Request, Response,
     http::{
@@ -34,8 +19,6 @@ const ACCESS_LOG_ENDPOINT: &str = "bq_access_logs";
 const FASTLY_CLIENT_IP: HeaderName = HeaderName::from_static("fastly-client-ip");
 const X_CACHE: HeaderName = HeaderName::from_static("x-cache");
 
-/// One row in the `access_logs` BigQuery table. The serialized JSON *is* the
-/// row: keys are columns, and they must match the BQ schema exactly.
 #[skip_serializing_none]
 #[serde_as]
 #[derive(Serialize)]
@@ -65,8 +48,6 @@ struct AccessLog<'a> {
     fastly_server: Option<&'a str>,
 }
 
-/// Request-side fields snapshotted at the start of a request, since the
-/// `Request` is consumed downstream.
 struct RequestCapture {
     started_at: Instant,
     method: http::Method,
@@ -113,7 +94,6 @@ impl From<&Request> for RequestCapture {
     }
 }
 
-/// Emit one access-log row at request end. Logging failures are swallowed.
 fn emit_access_log(
     capture: &RequestCapture,
     request_id: &str,
@@ -123,8 +103,6 @@ fn emit_access_log(
 ) {
     let response_time = capture.started_at.elapsed();
 
-    // One-line human summary for `fastly log-tail`. Plain `println!` so it
-    // doesn't also round-trip through any trace sink.
     println!(
         "access status={} method={} url={} response_time_ms={} backend={} request_id={request_id}",
         response.get_status().as_u16(),
@@ -169,7 +147,6 @@ fn non_empty(s: &str) -> Option<&str> {
 }
 
 fn main() {
-    // A minimal stdout subscriber so the `warn!` on a bad client IP is visible.
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().compact().with_ansi(false))
         .init();
@@ -178,7 +155,13 @@ fn main() {
         .with_header(FASTLY_CLIENT_IP, "203.0.113.5");
     let capture = RequestCapture::from(&req);
     let response = Response::from_status(StatusCode::OK);
-    emit_access_log(&capture, "req-abc-123", &response, Some("origin"), "example_service");
+    emit_access_log(
+        &capture,
+        "req-abc-123",
+        &response,
+        Some("origin"),
+        "example_service",
+    );
 }
 
 #[cfg(test)]
@@ -187,8 +170,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use std::net::Ipv4Addr;
 
-    // The key invariant: the serialized key set must match the BQ table's
-    // columns exactly, or rows are dropped on load.
     #[test]
     fn access_log_column_set_matches_schema() {
         let row = AccessLog {

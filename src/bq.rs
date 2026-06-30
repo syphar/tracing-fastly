@@ -1,35 +1,11 @@
-//! BigQuery-over-Fastly helpers.
-//!
-//! Fastly ships a named `logging_bigquery` endpoint's lines as
-//! newline-delimited JSON, which BigQuery ingests via load jobs. The
-//! serialized JSON *is* the row: each top-level key is a column and value
-//! types must coerce to the column types. That coercion has sharp edges —
-//! this module captures them so you don't rediscover each one by watching
-//! rows silently vanish.
-//!
-//! You bring the row: a `#[derive(Serialize)]` struct whose fields are your
-//! columns (kept in lockstep with your BigQuery table schema), using the
-//! `ser_*` functions below via `#[serde(serialize_with = ...)]`. Then
-//! [`write_ndjson_row`] ships it. See `examples/bigquery.rs`.
-
 use fastly::log::Endpoint;
 use serde::{Serialize, Serializer, ser::Error as _};
 use std::{io::Write, time::Duration};
 
-/// Whether a Fastly log endpoint with this name is configured on the service.
-///
-/// Writing to an unconfigured endpoint is silently dropped at the edge, so
-/// this is only needed to skip building an expensive row — emitting
-/// unconditionally is safe.
 pub fn endpoint_configured(name: &str) -> bool {
     Endpoint::try_from_name(name).is_ok()
 }
 
-/// Serialize `row` to one NDJSON line and write it to the named Fastly log
-/// endpoint. Fire-and-forget: serialization errors (only possible for
-/// programming mistakes, e.g. a map with non-string keys) and the
-/// effectively-infallible endpoint write are both swallowed, so a broken sink
-/// can never break the request being served.
 pub fn write_ndjson_row<T: Serialize>(endpoint: &str, row: &T) {
     let Ok(line) = serde_json::to_string(row) else {
         return;
@@ -37,13 +13,7 @@ pub fn write_ndjson_row<T: Serialize>(endpoint: &str, row: &T) {
     let _ = writeln!(Endpoint::from_name(endpoint), "{line}");
 }
 
-/// Serialize a [`SystemTime`](std::time::SystemTime) as Unix epoch seconds (a
-/// JSON number) so a BigQuery `TIMESTAMP` column coerces it. A pre-epoch value
-/// falls back to `0.0` rather than failing the row.
-pub fn ser_unix_seconds<S: Serializer>(
-    t: &std::time::SystemTime,
-    s: S,
-) -> Result<S::Ok, S::Error> {
+pub fn ser_unix_seconds<S: Serializer>(t: &std::time::SystemTime, s: S) -> Result<S::Ok, S::Error> {
     let secs = t
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
@@ -51,13 +21,10 @@ pub fn ser_unix_seconds<S: Serializer>(
     s.serialize_f64(secs)
 }
 
-/// Serialize a [`Duration`] as milliseconds (a JSON number / `FLOAT64`).
 pub fn ser_duration_ms<S: Serializer>(duration: &Duration, s: S) -> Result<S::Ok, S::Error> {
     s.serialize_f64(duration.as_secs_f64() * 1000.0)
 }
 
-/// Serialize an HTTP status as its numeric code (`INTEGER`), not the quoted
-/// reason phrase.
 pub fn ser_http_status<S: Serializer>(
     status: &fastly::http::StatusCode,
     s: S,
@@ -65,14 +32,6 @@ pub fn ser_http_status<S: Serializer>(
     s.serialize_u16(status.as_u16())
 }
 
-/// Serialize an optional value as a **JSON-encoded string** for a BigQuery
-/// `JSON` column.
-///
-/// BigQuery's NDJSON load path expects a `JSON` column's value to be a string
-/// containing JSON, *not* a nested object — a nested object type-mismatches
-/// and BigQuery silently drops the whole row. `None` serializes as absent
-/// (pair with `#[serde(skip_serializing_if = "Option::is_none")]` or
-/// `skip_serializing_none`).
 pub fn ser_json_as_string<T, S>(v: &Option<T>, s: S) -> Result<S::Ok, S::Error>
 where
     T: Serialize,
@@ -162,9 +121,11 @@ mod tests {
         let payload = json!({ "k": 1 });
         let v = serde_json::to_value(Row { p: Some(&payload) }).unwrap();
 
-        // Must be a JSON-encoded string, and round-trip back to the object.
         let s = v["p"].as_str().expect("payload must be a string");
-        assert_eq!(serde_json::from_str::<serde_json::Value>(s).unwrap(), json!({ "k": 1 }));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(s).unwrap(),
+            json!({ "k": 1 })
+        );
     }
 
     #[test]
@@ -174,8 +135,7 @@ mod tests {
             #[serde(serialize_with = "ser_json_as_string")]
             p: Option<&'a serde_json::Value>,
         }
-        // Without skip_serializing_if, None serializes as JSON null; with the
-        // skip attribute (see the example) the key is omitted entirely.
+
         let v = serde_json::to_value(Row { p: None }).unwrap();
         assert!(v["p"].is_null());
     }

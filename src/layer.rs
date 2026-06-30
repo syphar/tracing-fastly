@@ -1,12 +1,3 @@
-//! The `tracing` layer: event → [`StructuredEvent`] → [`EventSink`].
-//!
-//! The non-obvious part is **span-field correlation**. A handler opens a
-//! span and records `request_id` on it; every event fired under that span
-//! should carry that id without callers threading it through each macro. This
-//! layer handles it by stashing a [`SpanState`] in each span's
-//! `extensions()`, capturing the configured fields as they appear, and — per
-//! event — walking the span scope to resolve them.
-
 use crate::{
     event::{CorrelationFields, EventVisitor, StructuredEvent},
     sink::EventSink,
@@ -22,21 +13,12 @@ use tracing_subscriber::{
     registry::LookupSpan,
 };
 
-/// A [`Layer`] that turns each event into a [`StructuredEvent`] and forwards
-/// it to a [`EventSink`], propagating chosen span fields onto every event in
-/// the span's scope.
-///
-/// Construct with [`CorrelationLayer::new`] and declare the fields to
-/// propagate with [`correlate`](Self::correlate) /
-/// [`correlate_all`](Self::correlate_all). With no fields configured it still
-/// works — events just carry an empty [`CorrelationFields`].
 pub struct CorrelationLayer<K> {
     sink: K,
     correlate: Vec<&'static str>,
 }
 
 impl<K> CorrelationLayer<K> {
-    /// A layer that emits to `sink` and correlates no span fields yet.
     pub fn new(sink: K) -> Self {
         Self {
             sink,
@@ -44,32 +26,22 @@ impl<K> CorrelationLayer<K> {
         }
     }
 
-    /// Propagate the span field `name` (e.g. `"request_id"`) to events.
     pub fn correlate(mut self, name: &'static str) -> Self {
         self.correlate.push(name);
         self
     }
 
-    /// Propagate several span fields. Equivalent to repeated
-    /// [`correlate`](Self::correlate) calls.
     pub fn correlate_all(mut self, names: impl IntoIterator<Item = &'static str>) -> Self {
         self.correlate.extend(names);
         self
     }
 }
 
-/// Correlation values captured *on one span*, written from `on_new_span` and
-/// `on_record`, read from `on_event` while walking the scope.
 #[derive(Default)]
 struct SpanState {
     values: Vec<(&'static str, String)>,
 }
 
-/// Captures the configured correlation fields out of a span's fields.
-///
-/// A value normally arrives as `&str` (`record_str`); `record_debug` is the
-/// fallback for other types, and since a `&str`'s Debug repr is quoted we
-/// strip the surrounding quotes to match the `record_str` form.
 struct CorrelationVisitor<'a> {
     wanted: &'a [&'static str],
     out: &'a mut Vec<(&'static str, String)>,
@@ -77,12 +49,11 @@ struct CorrelationVisitor<'a> {
 
 impl CorrelationVisitor<'_> {
     fn capture(&mut self, name: &str, value: impl FnOnce() -> String) {
-        // Keep the `&'static str` key from `wanted`, not the borrowed name.
         let Some(&key) = self.wanted.iter().find(|w| **w == name) else {
             return;
         };
         let value = value();
-        // Last write wins (a later `span.record(...)` overrides creation).
+
         match self.out.iter_mut().find(|(k, _)| *k == key) {
             Some(slot) => slot.1 = value,
             None => self.out.push((key, value)),
@@ -95,7 +66,9 @@ impl Visit for CorrelationVisitor<'_> {
         self.capture(field.name(), || value.to_owned());
     }
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        self.capture(field.name(), || format!("{value:?}").trim_matches('"').to_owned());
+        self.capture(field.name(), || {
+            format!("{value:?}").trim_matches('"').to_owned()
+        });
     }
 }
 
@@ -115,8 +88,6 @@ where
     }
 
     fn on_record(&self, id: &Id, values: &Record<'_>, ctx: Context<'_, S>) {
-        // Fields set via `span.record(...)` after creation land here, not in
-        // `on_new_span` — capture them too.
         let Some(span) = ctx.span(id) else { return };
         let mut ext = span.extensions_mut();
         if let Some(state) = ext.get_mut::<SpanState>() {
@@ -131,8 +102,6 @@ where
         let mut visitor = EventVisitor::new();
         event.record(&mut visitor);
 
-        // Resolve correlation fields root → leaf; outermost span wins, so a
-        // value set on the request's root span is not shadowed by inner spans.
         let mut correlation = CorrelationFields::default();
         if let Some(scope) = ctx.event_scope(event) {
             for span in scope.from_root() {
@@ -165,14 +134,12 @@ mod tests {
     use tracing::{info_span, subscriber::with_default};
     use tracing_subscriber::{prelude::*, registry};
 
-    /// What a sink saw for a single captured event.
     #[derive(Default, Clone)]
     struct Captured {
         message: String,
         correlation: Vec<(String, String)>,
     }
 
-    /// Test sink that records the last event it received.
     #[derive(Clone, Default)]
     struct CaptureSink(Arc<Mutex<Option<Captured>>>);
 
@@ -189,8 +156,6 @@ mod tests {
         }
     }
 
-    /// Drive a real tracing pipeline (a standalone `Field` isn't constructible
-    /// outside tracing's callsite machinery) and return what the sink saw.
     fn capture<F: FnOnce()>(layer: CorrelationLayer<CaptureSink>, f: F) -> Captured {
         let sink = CaptureSink::default();
         let slot = sink.0.clone();
@@ -208,69 +173,87 @@ mod tests {
 
     #[test]
     fn request_id_captured_from_span_creation() {
-        let c = capture(CorrelationLayer::new(CaptureSink::default()).correlate("request_id"), || {
-            let span = info_span!("req", request_id = "abc-123");
-            let _g = span.enter();
-            tracing::info!("hello");
-        });
+        let c = capture(
+            CorrelationLayer::new(CaptureSink::default()).correlate("request_id"),
+            || {
+                let span = info_span!("req", request_id = "abc-123");
+                let _g = span.enter();
+                tracing::info!("hello");
+            },
+        );
         assert_eq!(rid(&c), Some("abc-123"));
         assert_eq!(c.message, "hello");
     }
 
     #[test]
     fn request_id_captured_when_recorded_after_span_creation() {
-        let c = capture(CorrelationLayer::new(CaptureSink::default()).correlate("request_id"), || {
-            let span = info_span!("req", request_id = tracing::field::Empty);
-            span.record("request_id", "late-id");
-            let _g = span.enter();
-            tracing::info!("hello");
-        });
+        let c = capture(
+            CorrelationLayer::new(CaptureSink::default()).correlate("request_id"),
+            || {
+                let span = info_span!("req", request_id = tracing::field::Empty);
+                span.record("request_id", "late-id");
+                let _g = span.enter();
+                tracing::info!("hello");
+            },
+        );
         assert_eq!(rid(&c), Some("late-id"));
     }
 
     #[test]
     fn request_id_inherited_from_ancestor_span() {
-        let c = capture(CorrelationLayer::new(CaptureSink::default()).correlate("request_id"), || {
-            let outer = info_span!("req", request_id = "root-id");
-            let _g = outer.enter();
-            let inner = info_span!("inner");
-            let _g2 = inner.enter();
-            tracing::info!("hello");
-        });
+        let c = capture(
+            CorrelationLayer::new(CaptureSink::default()).correlate("request_id"),
+            || {
+                let outer = info_span!("req", request_id = "root-id");
+                let _g = outer.enter();
+                let inner = info_span!("inner");
+                let _g2 = inner.enter();
+                tracing::info!("hello");
+            },
+        );
         assert_eq!(rid(&c), Some("root-id"));
     }
 
     #[test]
     fn outermost_span_wins() {
-        let c = capture(CorrelationLayer::new(CaptureSink::default()).correlate("request_id"), || {
-            let outer = info_span!("req", request_id = "root-id");
-            let _g = outer.enter();
-            let inner = info_span!("inner", request_id = "inner-id");
-            let _g2 = inner.enter();
-            tracing::info!("hello");
-        });
+        let c = capture(
+            CorrelationLayer::new(CaptureSink::default()).correlate("request_id"),
+            || {
+                let outer = info_span!("req", request_id = "root-id");
+                let _g = outer.enter();
+                let inner = info_span!("inner", request_id = "inner-id");
+                let _g2 = inner.enter();
+                tracing::info!("hello");
+            },
+        );
         assert_eq!(rid(&c), Some("root-id"));
     }
 
     #[test]
     fn absent_when_no_ancestor_has_it() {
-        let c = capture(CorrelationLayer::new(CaptureSink::default()).correlate("request_id"), || {
-            let span = info_span!("plain");
-            let _g = span.enter();
-            tracing::info!("hello");
-        });
+        let c = capture(
+            CorrelationLayer::new(CaptureSink::default()).correlate("request_id"),
+            || {
+                let span = info_span!("plain");
+                let _g = span.enter();
+                tracing::info!("hello");
+            },
+        );
         assert_eq!(rid(&c), None);
     }
 
     #[test]
     fn only_configured_fields_are_correlated() {
-        let c = capture(CorrelationLayer::new(CaptureSink::default()).correlate("request_id"), || {
-            let span = info_span!("req", other = "nope", request_id = "real");
-            let _g = span.enter();
-            tracing::info!("hello");
-        });
+        let c = capture(
+            CorrelationLayer::new(CaptureSink::default()).correlate("request_id"),
+            || {
+                let span = info_span!("req", other = "nope", request_id = "real");
+                let _g = span.enter();
+                tracing::info!("hello");
+            },
+        );
         assert_eq!(rid(&c), Some("real"));
-        // `other` was not requested, so it must not appear in correlation.
+
         assert!(c.correlation.iter().all(|(k, _)| k != "other"));
     }
 
@@ -286,7 +269,10 @@ mod tests {
         );
         assert_eq!(rid(&c), Some("r1"));
         assert_eq!(
-            c.correlation.iter().find(|(k, _)| k == "trace_id").map(|(_, v)| v.as_str()),
+            c.correlation
+                .iter()
+                .find(|(k, _)| k == "trace_id")
+                .map(|(_, v)| v.as_str()),
             Some("t1")
         );
     }

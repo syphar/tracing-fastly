@@ -1,22 +1,3 @@
-//! Worked example: ship `tracing` events to a BigQuery `trace_logs` table.
-//!
-//! This is the half of the original module that is **yours to own** — the row
-//! schema. It's coupled to a specific BigQuery table (at Thermondo, to the
-//! Terraform in `modules/fastly/bq_log_sink/` that declares the table, schema,
-//! and endpoint name), so the library deliberately doesn't define it. It gives
-//! you the serde coercion helpers ([`tracing_fastly::bq`]) and the
-//! [`EventSink`] seam; you bring the columns.
-//!
-//! [`BqTraceSink`] maps each [`StructuredEvent`] the [`CorrelationLayer`]
-//! produces onto a [`TraceLog`] row and ships it. For a per-request access-log
-//! row that reuses the same `bq` helpers, see `examples/access_log.rs`.
-//!
-//! Endpoint names must match the `logging_bigquery` blocks on the Fastly
-//! service. Writing to an unconfigured endpoint is dropped at the edge.
-//!
-//! Run `cargo build --example bigquery` to type-check; the Fastly hostcalls
-//! only do anything inside the Compute runtime.
-
 use serde::Serialize;
 use serde_with::{DisplayFromStr, serde_as, skip_serializing_none};
 use std::time::SystemTime;
@@ -25,11 +6,7 @@ use tracing_subscriber::prelude::*;
 
 const TRACE_LOG_ENDPOINT: &str = "bq_trace_logs";
 
-/// Install the global subscriber: a compact stdout layer for `fastly
-/// log-tail`, plus the BigQuery trace sink (only when its endpoint exists).
 fn setup_logging(service_name: &str) {
-    // `Option<Layer>` is itself a `Layer` and no-ops when `None`, so without
-    // the endpoint we skip the per-event serialization cost entirely.
     let bq_layer = bq::endpoint_configured(TRACE_LOG_ENDPOINT).then(|| {
         CorrelationLayer::new(BqTraceSink {
             service_name: service_name.to_owned(),
@@ -44,9 +21,6 @@ fn setup_logging(service_name: &str) {
         .init();
 }
 
-/// Maps each [`StructuredEvent`] onto a [`TraceLog`] row and ships it. The
-/// destination endpoint lives here, on the sink — the `EventSink` trait itself
-/// stays endpoint-agnostic.
 struct BqTraceSink {
     service_name: String,
     endpoint: &'static str,
@@ -54,8 +28,6 @@ struct BqTraceSink {
 
 impl EventSink for BqTraceSink {
     fn emit(&self, event: &StructuredEvent<'_>) {
-        // The library hands us the non-message fields as a map; wrap them as a
-        // JSON object for the `payload` column (omitted when empty).
         let payload = event
             .payload()
             .map(|fields| serde_json::Value::Object(fields.clone()));
@@ -72,8 +44,6 @@ impl EventSink for BqTraceSink {
     }
 }
 
-/// One row in the `trace_logs` BigQuery table. The serialized JSON *is* the
-/// row: keys are columns, and they must match the BQ schema exactly.
 #[skip_serializing_none]
 #[serde_as]
 #[derive(Serialize)]
@@ -85,8 +55,7 @@ struct TraceLog<'a> {
     #[serde_as(as = "DisplayFromStr")]
     level: tracing::Level,
     message: &'a str,
-    // BQ `JSON` columns ingested via NDJSON must be a JSON-encoded *string*,
-    // not a nested object — see [`bq::ser_json_as_string`].
+
     #[serde(serialize_with = "bq::ser_json_as_string")]
     payload: Option<&'a serde_json::Value>,
 }
@@ -94,8 +63,6 @@ struct TraceLog<'a> {
 fn main() {
     setup_logging("example_service");
 
-    // A handler opens a request span, fills in the id, and logs within it; the
-    // events inherit `request_id` without threading it through each macro.
     let span = tracing::info_span!("request", request_id = tracing::field::Empty);
     span.record("request_id", "req-abc-123");
     let _guard = span.enter();
@@ -110,10 +77,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use std::time::Duration;
-
-    // Schema-shape tests live with the schema. Run via `cargo test --example
-    // bigquery`. The key invariant: the serialized key set must match the BQ
-    // table's columns exactly, or rows are dropped on load.
 
     #[test]
     fn trace_log_columns_and_payload_is_a_string() {
@@ -132,11 +95,23 @@ mod tests {
         keys.sort();
         assert_eq!(
             keys,
-            ["level", "message", "payload", "request_id", "service_name", "timestamp"]
+            [
+                "level",
+                "message",
+                "payload",
+                "request_id",
+                "service_name",
+                "timestamp"
+            ]
         );
 
-        let s = v["payload"].as_str().expect("payload must be a JSON string");
-        assert_eq!(serde_json::from_str::<serde_json::Value>(s).unwrap(), json!({ "k": 1 }));
+        let s = v["payload"]
+            .as_str()
+            .expect("payload must be a JSON string");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(s).unwrap(),
+            json!({ "k": 1 })
+        );
     }
 
     #[test]
