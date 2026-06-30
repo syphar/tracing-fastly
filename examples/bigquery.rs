@@ -8,7 +8,7 @@ use tracing_subscriber::prelude::*;
 const TRACE_LOG_ENDPOINT: &str = "bq_trace_logs";
 
 fn setup_logging(service_name: &str) {
-    let bq_layer = Endpoint::try_from_name("bq_trace_logs")
+    let bq_layer = Endpoint::try_from_name(TRACE_LOG_ENDPOINT)
         .ok()
         .map(|endpoint| {
             CorrelationLayer::new(BqTraceSink {
@@ -43,7 +43,7 @@ impl EventSink for BqTraceSink {
             message: event.message,
             payload: payload.as_ref(),
         };
-        bq::write_ndjson_row(self.endpoint, &row);
+        bq::write_ndjson_row(&self.endpoint, &row);
     }
 }
 

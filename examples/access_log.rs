@@ -4,6 +4,7 @@ use fastly::{
         self, HeaderName, StatusCode, Url,
         header::{REFERER, USER_AGENT},
     },
+    log::Endpoint,
 };
 use serde::Serialize;
 use serde_with::{DisplayFromStr, serde_as, skip_serializing_none};
@@ -15,7 +16,6 @@ use tracing::warn;
 use tracing_fastly::bq;
 use tracing_subscriber::prelude::*;
 
-const ACCESS_LOG_ENDPOINT: &str = "bq_access_logs";
 const FASTLY_CLIENT_IP: HeaderName = HeaderName::from_static("fastly-client-ip");
 const X_CACHE: HeaderName = HeaderName::from_static("x-cache");
 
@@ -112,9 +112,7 @@ fn emit_access_log(
         backend_name.unwrap_or("-"),
     );
 
-    if !bq::endpoint_configured(ACCESS_LOG_ENDPOINT) {
-        return;
-    }
+    let endpoint = Endpoint::from_name("bq_access_log");
 
     let client_country = capture.client_country();
     let cache_status = response.get_header_str_lossy(X_CACHE);
@@ -139,7 +137,7 @@ fn emit_access_log(
         fastly_pop: non_empty(fastly::compute_runtime::pop()),
         fastly_server: non_empty(fastly::compute_runtime::hostname()),
     };
-    bq::write_ndjson_row(ACCESS_LOG_ENDPOINT, &row);
+    bq::write_ndjson_row(&|| endpoint.clone(), &row);
 }
 
 fn non_empty(s: &str) -> Option<&str> {

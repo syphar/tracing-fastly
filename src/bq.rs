@@ -1,15 +1,13 @@
-use fastly::log::Endpoint;
 use serde::{Serialize, Serializer, ser::Error as _};
 use std::time::Duration;
 use tracing_subscriber::fmt::MakeWriter;
 
-pub fn endpoint_configured(name: &str) -> bool {
-    Endpoint::try_from_name(name).is_ok()
-}
-
-pub fn write_ndjson_row<'a, T: Serialize>(endpoint: impl MakeWriter<'a> + 'a, row: &T) {
-    let writer = endpoint.make_writer();
-    let _ = serde_json::to_writer(writer, &row);
+pub fn write_ndjson_row<W, T>(writer: &W, row: &T)
+where
+    W: for<'a> MakeWriter<'a>,
+    T: Serialize,
+{
+    let _ = serde_json::to_writer(writer.make_writer(), row);
 }
 
 pub fn ser_unix_seconds<S: Serializer>(t: &std::time::SystemTime, s: S) -> Result<S::Ok, S::Error> {
