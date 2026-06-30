@@ -5,7 +5,9 @@ edition = "2024"
 
 [dependencies]
 fastly = "0.13.0"
-serde = { version = "1.0", features = ["derive"] }
+# Traits only (Serialize / Serializer); the `derive` macro is used only by the
+# tests and examples, so it lives in dev-dependencies.
+serde = "1.0"
 serde_json = "1.0.137"
 tracing = { version = "0.1" }
 # The library only needs `registry` — the span-extension storage that
@@ -15,7 +17,8 @@ tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3.16", default-features = false, features = ["registry"] }
 
 [dev-dependencies]
-# Used only by the examples, not the library itself.
+# Used only by the examples and tests, not the library itself.
 tracing-subscriber = { version = "0.3.16", default-features = false, features = ["fmt", "env-filter"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_with = "3.21.0"
 pretty_assertions = "1.4.1"
