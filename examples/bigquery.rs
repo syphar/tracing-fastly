@@ -50,6 +50,9 @@ const X_CACHE: HeaderName = HeaderName::from_static("x-cache");
 
 /// Install the global subscriber: a compact stdout layer for `fastly
 /// log-tail`, plus the BigQuery trace sink (only when its endpoint exists).
+///
+/// If you didn't need the BigQuery rows at all, the whole body collapses to
+/// `tracing_fastly::init_stdout();`.
 fn setup_logging(service_name: &str) {
     // `Option<Layer>` is itself a `Layer` and no-ops when `None`, so without
     // the endpoint we skip the per-event serialization cost entirely.
@@ -61,7 +64,7 @@ fn setup_logging(service_name: &str) {
     });
 
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().compact())
+        .with(tracing_fastly::setup::compact_stdout_layer())
         .with(bq_layer)
         .init();
 }
