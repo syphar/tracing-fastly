@@ -14,5 +14,4 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
 pretty_assertions = "1.4.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_with = "3.21.0"
-# Used only by the examples and tests, not the library itself.
 tracing-subscriber = { version = "0.3.16", default-features = false, features = ["fmt", "env-filter"] }
