@@ -23,6 +23,10 @@ impl StructuredEvent<'_> {
     }
 }
 
+pub trait EventSink: Send + Sync + 'static {
+    fn emit(&self, event: &StructuredEvent<'_>);
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct CorrelationFields {
     pub(crate) values: Vec<(&'static str, String)>,

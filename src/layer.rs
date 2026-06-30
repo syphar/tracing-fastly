@@ -1,7 +1,4 @@
-use crate::{
-    event::{CorrelationFields, EventVisitor, StructuredEvent},
-    sink::EventSink,
-};
+use crate::event::{CorrelationFields, EventSink, EventVisitor, StructuredEvent};
 use std::time::SystemTime;
 use tracing::{
     Event, Subscriber,
