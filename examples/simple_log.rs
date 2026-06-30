@@ -5,10 +5,8 @@ use tracing_subscriber::{
     EnvFilter, filter::LevelFilter, fmt, fmt::writer::MakeWriterExt, prelude::*,
 };
 
-const LOG_ENDPOINT: &str = "my_logs";
-
 fn setup_logging() {
-    let writer = io::stdout.and(|| Endpoint::from_name(LOG_ENDPOINT));
+    let writer = io::stdout.and(|| Endpoint::from_name("my_logs"));
 
     tracing_subscriber::registry()
         .with(
