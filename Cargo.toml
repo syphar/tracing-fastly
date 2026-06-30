@@ -8,9 +8,14 @@ fastly = "0.13.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.137"
 tracing = { version = "0.1" }
-tracing-subscriber = { version = "0.3.16", default-features = false, features = ["fmt", "json", "env-filter"] }
+# The library only needs `registry` — the span-extension storage that
+# CorrelationLayer stashes per-span state in. The `fmt` layer and `EnvFilter`
+# are wiring concerns of the binary, so they live in dev-dependencies for the
+# examples instead.
+tracing-subscriber = { version = "0.3.16", default-features = false, features = ["registry"] }
 
 [dev-dependencies]
-# Used only by the examples (BigQuery row schemas), not the library itself.
+# Used only by the examples, not the library itself.
+tracing-subscriber = { version = "0.3.16", default-features = false, features = ["fmt", "env-filter"] }
 serde_with = "3.21.0"
 pretty_assertions = "1.4.1"
