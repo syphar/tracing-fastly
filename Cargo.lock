@@ -1050,7 +1050,6 @@ name = "tracing-fastly"
 version = "0.1.0"
 dependencies = [
  "fastly",
- "fastly-shared",
  "pretty_assertions",
  "serde",
  "serde_json",
