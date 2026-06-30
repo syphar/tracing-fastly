@@ -38,10 +38,7 @@ fn setup_logging() {
 fn main() {
     setup_logging();
 
-    // Events fired within the span inherit its fields in the compact output.
-    let span = info_span!("request", request_id = "req-abc-123");
-    let _guard = span.enter();
-
+    let _guard = info_span!("request", request_id = "req-abc-123").entered();
     info!(status = 200, backend = "origin", "handled request");
     warn!(reason = "stale", "cache miss");
 }
