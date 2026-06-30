@@ -56,6 +56,7 @@ fn setup_logging(service_name: &str) {
     let bq_layer = bq::endpoint_configured(TRACE_LOG_ENDPOINT).then(|| {
         CorrelationLayer::new(BqTraceSink {
             service_name: service_name.to_owned(),
+            endpoint: TRACE_LOG_ENDPOINT,
         })
         .correlate("request_id")
     });
@@ -70,9 +71,12 @@ fn setup_logging(service_name: &str) {
 // Trace log: one row per tracing event
 // ---------------------------------------------------------------------------
 
-/// Maps each [`StructuredEvent`] onto a [`TraceLog`] row and ships it.
+/// Maps each [`StructuredEvent`] onto a [`TraceLog`] row and ships it. The
+/// destination endpoint lives here, on the sink — the `EventSink` trait itself
+/// stays endpoint-agnostic.
 struct BqTraceSink {
     service_name: String,
+    endpoint: &'static str,
 }
 
 impl EventSink for BqTraceSink {
@@ -91,7 +95,7 @@ impl EventSink for BqTraceSink {
             message: event.message,
             payload: payload.as_ref(),
         };
-        bq::write_ndjson_row(TRACE_LOG_ENDPOINT, &row);
+        bq::write_ndjson_row(self.endpoint, &row);
     }
 }
 
