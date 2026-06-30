@@ -5,10 +5,8 @@ use std::{sync::Mutex, time::SystemTime};
 use tracing_fastly::{CorrelationLayer, EventSink, StructuredEvent, bq};
 use tracing_subscriber::prelude::*;
 
-const TRACE_LOG_ENDPOINT: &str = "bq_trace_logs";
-
 fn setup_logging(service_name: &str) {
-    let bq_layer = Endpoint::try_from_name(TRACE_LOG_ENDPOINT)
+    let bq_layer = Endpoint::try_from_name("bq_trace_logs")
         .ok()
         .map(|endpoint| {
             CorrelationLayer::new(BqTraceSink {
