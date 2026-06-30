@@ -7,13 +7,9 @@ use tracing::{
 
 pub struct StructuredEvent<'a> {
     pub timestamp: SystemTime,
-
     pub level: Level,
-
     pub message: &'a str,
-
     pub fields: &'a Map<String, Value>,
-
     pub correlation: &'a CorrelationFields,
 }
 
