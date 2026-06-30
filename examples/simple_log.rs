@@ -12,6 +12,8 @@
 //! only do anything inside the Compute runtime.
 
 use fastly::log::Endpoint;
+use std::io;
+use tracing::{info, info_span, warn};
 use tracing_subscriber::{
     EnvFilter, filter::LevelFilter, fmt, fmt::writer::MakeWriterExt, prelude::*,
 };
@@ -21,7 +23,7 @@ const LOG_ENDPOINT: &str = "my_logs";
 /// Install the global subscriber: one compact, non-ANSI format teed to stdout
 /// and `LOG_ENDPOINT`. Level defaults to `INFO`, overridable via `RUST_LOG`.
 fn setup_logging() {
-    let writer = std::io::stdout.and(|| Endpoint::from_name(LOG_ENDPOINT));
+    let writer = io::stdout.and(|| Endpoint::from_name(LOG_ENDPOINT));
 
     tracing_subscriber::registry()
         .with(
@@ -37,9 +39,9 @@ fn main() {
     setup_logging();
 
     // Events fired within the span inherit its fields in the compact output.
-    let span = tracing::info_span!("request", request_id = "req-abc-123");
+    let span = info_span!("request", request_id = "req-abc-123");
     let _guard = span.enter();
 
-    tracing::info!(status = 200, backend = "origin", "handled request");
-    tracing::warn!(reason = "stale", "cache miss");
+    info!(status = 200, backend = "origin", "handled request");
+    warn!(reason = "stale", "cache miss");
 }
