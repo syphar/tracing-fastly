@@ -2,32 +2,30 @@ use fastly::log::Endpoint;
 use serde::Serialize;
 use serde_with::{DisplayFromStr, serde_as, skip_serializing_none};
 use std::{sync::Mutex, time::SystemTime};
-use tracing_fastly::{CorrelationLayer, EventSink, StructuredEvent, bq};
+use tracing_fastly::{CorrelationLayer, EventSink, StructuredEvent, serialize};
 use tracing_subscriber::prelude::*;
 
 fn setup_logging(service_name: &str) {
-    let bq_layer = Endpoint::try_from_name("bq_trace_logs")
-        .ok()
-        .map(|endpoint| {
-            CorrelationLayer::new(BqTraceSink {
-                service_name: service_name.to_owned(),
-                endpoint: Mutex::new(endpoint),
-            })
-            .correlate("request_id")
-        });
+    let structured_layer = Endpoint::try_from_name("trace_logs").ok().map(|endpoint| {
+        CorrelationLayer::new(TraceSink {
+            service_name: service_name.to_owned(),
+            endpoint: Mutex::new(endpoint),
+        })
+        .correlate("request_id")
+    });
 
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().compact().with_ansi(false))
-        .with(bq_layer)
+        .with(structured_layer)
         .init();
 }
 
-struct BqTraceSink {
+struct TraceSink {
     service_name: String,
     endpoint: Mutex<Endpoint>,
 }
 
-impl EventSink for BqTraceSink {
+impl EventSink for TraceSink {
     fn emit(&self, event: &StructuredEvent<'_>) {
         let payload = event
             .payload()
@@ -41,7 +39,7 @@ impl EventSink for BqTraceSink {
             message: event.message,
             payload: payload.as_ref(),
         };
-        bq::write_ndjson_row(&self.endpoint, &row);
+        serialize::write_ndjson_row(&self.endpoint, &row);
     }
 }
 
@@ -49,7 +47,7 @@ impl EventSink for BqTraceSink {
 #[serde_as]
 #[derive(Serialize)]
 struct TraceLog<'a> {
-    #[serde(serialize_with = "bq::ser_unix_seconds")]
+    #[serde(serialize_with = "serialize::ser_unix_seconds")]
     timestamp: SystemTime,
     service_name: &'a str,
     request_id: Option<&'a str>,
@@ -57,7 +55,7 @@ struct TraceLog<'a> {
     level: tracing::Level,
     message: &'a str,
 
-    #[serde(serialize_with = "bq::ser_json_as_string")]
+    #[serde(serialize_with = "serialize::ser_json_as_string")]
     payload: Option<&'a serde_json::Value>,
 }
 

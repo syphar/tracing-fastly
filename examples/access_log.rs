@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use tracing::warn;
-use tracing_fastly::bq;
+use tracing_fastly::serialize;
 use tracing_subscriber::prelude::*;
 
 const FASTLY_CLIENT_IP: HeaderName = HeaderName::from_static("fastly-client-ip");
@@ -23,7 +23,7 @@ const X_CACHE: HeaderName = HeaderName::from_static("x-cache");
 #[serde_as]
 #[derive(Serialize)]
 struct AccessLog<'a> {
-    #[serde(serialize_with = "bq::ser_unix_seconds")]
+    #[serde(serialize_with = "serialize::ser_unix_seconds")]
     timestamp: SystemTime,
     service_name: &'a str,
     request_id: Option<&'a str>,
@@ -32,9 +32,12 @@ struct AccessLog<'a> {
     method: &'a http::Method,
     #[serde_as(as = "DisplayFromStr")]
     url: &'a Url,
-    #[serde(serialize_with = "bq::ser_http_status")]
+    #[serde(serialize_with = "serialize::ser_http_status")]
     status: StatusCode,
-    #[serde(serialize_with = "bq::ser_duration_ms", rename = "response_time_ms")]
+    #[serde(
+        serialize_with = "serialize::ser_duration_ms",
+        rename = "response_time_ms"
+    )]
     response_time: Duration,
     bytes_written: Option<usize>,
     cache_status: Option<&'a str>,
@@ -112,7 +115,7 @@ fn emit_access_log(
         backend_name.unwrap_or("-"),
     );
 
-    let endpoint = Endpoint::from_name("bq_access_log");
+    let endpoint = Endpoint::from_name("access_log");
 
     let client_country = capture.client_country();
     let cache_status = response.get_header_str_lossy(X_CACHE);
@@ -137,7 +140,7 @@ fn emit_access_log(
         fastly_pop: non_empty(fastly::compute_runtime::pop()),
         fastly_server: non_empty(fastly::compute_runtime::hostname()),
     };
-    bq::write_ndjson_row(&|| endpoint.clone(), &row);
+    serialize::write_ndjson_row(&|| endpoint.clone(), &row);
 }
 
 fn non_empty(s: &str) -> Option<&str> {
