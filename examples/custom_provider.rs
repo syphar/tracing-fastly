@@ -1,7 +1,7 @@
 //! Implementing a provider-specific JSON format outside this crate.
 
 use fastly::log::Endpoint;
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
 use std::{io::Write, sync::Mutex, time::SystemTime};
 use tracing::Level;
@@ -15,7 +15,8 @@ use tracing_subscriber::{filter::LevelFilter, prelude::*};
 struct CustomLog<'a> {
     #[serde(serialize_with = "tracing_fastly::serialize::system_time::ser_unix_milliseconds")]
     occurred_at_ms: SystemTime,
-    severity: &'static str,
+    #[serde(serialize_with = "serialize_level")]
+    severity: Level,
     body: &'a str,
     attributes: &'a Map<String, Value>,
 }
@@ -32,6 +33,13 @@ impl<W> CustomSink<W> {
     }
 }
 
+fn serialize_level<S>(level: &Level, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(level.as_str())
+}
+
 impl<W> StructuredEventSink for CustomSink<W>
 where
     W: Write + Send + 'static,
@@ -39,7 +47,7 @@ where
     fn emit(&self, event: &StructuredEvent<'_>) {
         let row = CustomLog {
             occurred_at_ms: event.timestamp(),
-            severity: severity(event.level()),
+            severity: event.level(),
             body: event.message(),
             // This already contains both event fields and inherited span fields.
             attributes: event.fields(),
@@ -53,16 +61,6 @@ where
         if let Err(error) = write_ndjson_row(&mut *writer, &row) {
             eprintln!("failed to write custom log: {error}");
         }
-    }
-}
-
-fn severity(level: Level) -> &'static str {
-    match level {
-        Level::ERROR => "error",
-        Level::WARN => "warning",
-        Level::INFO => "info",
-        Level::DEBUG => "debug",
-        Level::TRACE => "trace",
     }
 }
 
