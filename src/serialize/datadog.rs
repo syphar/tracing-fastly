@@ -109,6 +109,7 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::time::Duration;
+    use std::time::UNIX_EPOCH;
 
     #[test]
     fn trace_log_uses_datadog_reserved_fields_and_flattens_event_fields() {
