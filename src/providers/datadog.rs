@@ -7,8 +7,8 @@ use tracing::Level;
 
 /// A comma-separated collection of Datadog tags.
 ///
-/// Datadog recommends `key:value` tags. Keys and values are kept verbatim;
-/// callers should follow Datadog's tag naming requirements.
+/// Datadog recommends `key:value` tags. Values are kept verbatim after their
+/// syntax and length have been validated.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct Tags(String);
@@ -19,27 +19,34 @@ impl Tags {
     }
 
     /// Appends a `key:value` tag.
-    pub fn push(&mut self, key: impl AsRef<str>, value: impl AsRef<str>) {
+    pub fn push(&mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Result<(), TagError> {
+        let key = key.as_ref();
+        let value = value.as_ref();
+        validate_tag(key, value)?;
         self.push_separator();
-        self.0.push_str(key.as_ref());
+        self.0.push_str(key);
         self.0.push(':');
-        self.0.push_str(value.as_ref());
+        self.0.push_str(value);
+        Ok(())
     }
 
     /// Appends a tag without a value.
-    pub fn push_bare(&mut self, tag: impl AsRef<str>) {
+    pub fn push_bare(&mut self, tag: impl AsRef<str>) -> Result<(), TagError> {
+        let tag = tag.as_ref();
+        validate_bare_tag(tag)?;
         self.push_separator();
-        self.0.push_str(tag.as_ref());
+        self.0.push_str(tag);
+        Ok(())
     }
 
-    pub fn with(mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Self {
-        self.push(key, value);
-        self
+    pub fn with(mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Result<Self, TagError> {
+        self.push(key, value)?;
+        Ok(self)
     }
 
-    pub fn with_bare(mut self, tag: impl AsRef<str>) -> Self {
-        self.push_bare(tag);
-        self
+    pub fn with_bare(mut self, tag: impl AsRef<str>) -> Result<Self, TagError> {
+        self.push_bare(tag)?;
+        Ok(self)
     }
 
     pub fn as_str(&self) -> &str {
@@ -53,17 +60,71 @@ impl Tags {
     }
 }
 
-impl<K, V> FromIterator<(K, V)> for Tags
-where
-    K: AsRef<str>,
-    V: AsRef<str>,
-{
-    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
-        let mut tags = Self::new();
-        for (key, value) in iter {
-            tags.push(key, value);
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TagError {
+    Empty,
+    MustStartWithLetter,
+    InvalidCharacter { part: &'static str, character: char },
+    TooLong { characters: usize },
+}
+
+impl fmt::Display for TagError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => formatter.write_str("tag must not be empty"),
+            Self::MustStartWithLetter => formatter.write_str("tag must start with a letter"),
+            Self::InvalidCharacter { part, character } => {
+                write!(
+                    formatter,
+                    "tag {part} contains invalid character {character:?}"
+                )
+            }
+            Self::TooLong { characters } => {
+                write!(formatter, "tag has {characters} characters; maximum is 200")
+            }
         }
-        tags
+    }
+}
+
+impl std::error::Error for TagError {}
+
+fn validate_tag(key: &str, value: &str) -> Result<(), TagError> {
+    validate_start(key)?;
+    validate_characters("key", key, false)?;
+    validate_characters("value", value, true)?;
+    validate_length(key.chars().count() + 1 + value.chars().count())
+}
+
+fn validate_bare_tag(tag: &str) -> Result<(), TagError> {
+    validate_start(tag)?;
+    validate_characters("value", tag, true)?;
+    validate_length(tag.chars().count())
+}
+
+fn validate_start(tag: &str) -> Result<(), TagError> {
+    match tag.chars().next() {
+        None => Err(TagError::Empty),
+        Some(character) if character.is_alphabetic() => Ok(()),
+        Some(_) => Err(TagError::MustStartWithLetter),
+    }
+}
+
+fn validate_characters(part: &'static str, input: &str, allow_colon: bool) -> Result<(), TagError> {
+    if let Some(character) = input.chars().find(|character| {
+        !(character.is_alphanumeric()
+            || matches!(character, '_' | '-' | '.' | '/' | '@')
+            || (allow_colon && *character == ':'))
+    }) {
+        return Err(TagError::InvalidCharacter { part, character });
+    }
+    Ok(())
+}
+
+fn validate_length(characters: usize) -> Result<(), TagError> {
+    if characters > 200 {
+        Err(TagError::TooLong { characters })
+    } else {
+        Ok(())
     }
 }
 
@@ -164,9 +225,10 @@ mod tests {
 
     #[test]
     fn trace_log_uses_datadog_reserved_fields_and_nests_event_fields() {
+        let tags = Tags::new().with("env", "production").unwrap();
         let row = TraceLog {
             ddsource: "fastly",
-            ddtags: &Tags::new().with("env", "production"),
+            ddtags: &tags,
             hostname: "cache-fra1234",
             timestamp: UNIX_EPOCH + Duration::from_millis(1_500),
             message: "handled request",
@@ -224,14 +286,48 @@ mod tests {
 
     #[test]
     fn tags_are_encoded_as_a_comma_separated_string() {
-        let mut tags = Tags::new().with("env", "production");
-        tags.push("version", "1.2.3");
-        tags.push_bare("canary");
+        let mut tags = Tags::new().with("env", "production").unwrap();
+        tags.push("version", "1.2.3").unwrap();
+        tags.push_bare("canary").unwrap();
 
         assert_eq!(tags.as_str(), "env:production,version:1.2.3,canary");
         assert_eq!(
             serde_json::to_value(tags).unwrap(),
             json!("env:production,version:1.2.3,canary")
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_tags_without_mutating_the_collection() {
+        let mut tags = Tags::new().with("env", "production").unwrap();
+
+        assert_eq!(
+            tags.push("release", "stable,admin:true"),
+            Err(TagError::InvalidCharacter {
+                part: "value",
+                character: ',',
+            })
+        );
+        assert_eq!(
+            tags.push("invalid:key", "value"),
+            Err(TagError::InvalidCharacter {
+                part: "key",
+                character: ':',
+            })
+        );
+        assert_eq!(
+            tags.push("2invalid", "value"),
+            Err(TagError::MustStartWithLetter)
+        );
+        assert_eq!(tags.as_str(), "env:production");
+    }
+
+    #[test]
+    fn rejects_tags_longer_than_two_hundred_characters() {
+        let value = "x".repeat(197);
+        assert_eq!(
+            Tags::new().with("env", value),
+            Err(TagError::TooLong { characters: 201 })
         );
     }
 }

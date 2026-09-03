@@ -21,8 +21,11 @@ fn setup_logging(service_name: &str) {
             // want to emit the log-record.
             StructuredEventLayer::new(
                 // create the log-sink with datadog settings
-                datadog::TraceSink::new(endpoint, service_name)
-                    .with_tags(datadog::Tags::new().with("env", "production")),
+                datadog::TraceSink::new(endpoint, service_name).with_tags(
+                    datadog::Tags::new()
+                        .with("env", "production")
+                        .expect("static Datadog tag is valid"),
+                ),
             ),
         )
         .init();
