@@ -1,8 +1,7 @@
 mod model;
 
-pub use model::TraceLog;
-
 use crate::{StructuredEvent, StructuredEventSink, serialize};
+use model::TraceLog;
 use std::{io::Write, sync::Mutex};
 
 /// Writes structured tracing events to a Fastly Datadog logging endpoint.
@@ -45,11 +44,11 @@ where
             ddsource: &self.source,
             ddtags: &self.tags,
             hostname: &self.hostname,
-            timestamp: event.timestamp,
-            message: event.message,
+            timestamp: event.timestamp(),
+            message: event.message(),
             service: &self.service,
-            status: event.level,
-            fields: event.fields,
+            status: event.level(),
+            fields: event.fields(),
         };
 
         let Ok(mut writer) = self.writer.lock() else {

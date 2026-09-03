@@ -10,15 +10,41 @@ use tracing::{
 /// Will be populated with the collected info from tracing spans, records and events,
 /// then handed to the `StructuredEventSink`.
 pub struct StructuredEvent<'a> {
-    pub timestamp: SystemTime,
-    pub level: Level,
-    pub message: &'a str,
+    pub(crate) timestamp: SystemTime,
+    pub(crate) level: Level,
+    pub(crate) message: &'a str,
     /// The event's effective fields.
     ///
     /// This combines fields recorded directly on the event with fields inherited
     /// from its active span hierarchy. When names collide, event fields take
     /// precedence, followed by the innermost span and then its ancestors.
-    pub fields: &'a Map<String, Value>,
+    pub(crate) fields: &'a Map<String, Value>,
+}
+
+impl<'a> StructuredEvent<'a> {
+    /// Returns when the event was observed.
+    pub fn timestamp(&self) -> SystemTime {
+        self.timestamp
+    }
+
+    /// Returns the event's tracing level.
+    pub fn level(&self) -> Level {
+        self.level
+    }
+
+    /// Returns the event's message, or an empty string when none was recorded.
+    pub fn message(&self) -> &'a str {
+        self.message
+    }
+
+    /// Returns the event's effective fields.
+    ///
+    /// These include fields recorded directly on the event and fields inherited
+    /// from its active span hierarchy. Event fields take precedence over fields
+    /// from the innermost span, which take precedence over ancestor span fields.
+    pub fn fields(&self) -> &'a Map<String, Value> {
+        self.fields
+    }
 }
 
 /// Receives normalized tracing events for conversion into an application-defined format.

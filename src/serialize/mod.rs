@@ -1,6 +1,6 @@
 //! Collection of serde serialization helpers.
 
-pub mod system_time;
+pub(crate) mod system_time;
 
 use serde::Serialize;
 use std::io::{self, Write};

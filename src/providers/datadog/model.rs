@@ -9,20 +9,20 @@ use tracing::Level;
 /// Additional event fields are kept under `fields` to avoid collisions with
 /// Datadog's reserved attributes.
 #[derive(Debug, Serialize)]
-pub struct TraceLog<'a> {
-    pub ddsource: &'a str,
-    pub ddtags: &'a str,
-    pub hostname: &'a str,
+pub(super) struct TraceLog<'a> {
+    pub(super) ddsource: &'a str,
+    pub(super) ddtags: &'a str,
+    pub(super) hostname: &'a str,
     /// Milliseconds since the Unix epoch.
     /// Format / name:
     /// <https://docs.datadoghq.com/logs/log_configuration/processors/log_date_remapper/>
     #[serde(serialize_with = "serialize::system_time::ser_unix_milliseconds")]
-    pub timestamp: SystemTime,
-    pub message: &'a str,
-    pub service: &'a str,
+    pub(super) timestamp: SystemTime,
+    pub(super) message: &'a str,
+    pub(super) service: &'a str,
     #[serde(serialize_with = "ser_tracing_level")]
-    pub status: Level,
-    pub fields: &'a Map<String, Value>,
+    pub(super) status: Level,
+    pub(super) fields: &'a Map<String, Value>,
 }
 
 /// serialize a `tracing::Level` with datadog convention:
