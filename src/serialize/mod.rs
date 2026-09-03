@@ -27,6 +27,20 @@ pub fn ser_duration_ms<S: Serializer>(duration: &Duration, s: S) -> Result<S::Ok
     s.serialize_f64(duration.as_secs_f64() * 1000.0)
 }
 
+pub fn ser_unix_milliseconds<S>(
+    timestamp: &std::time::SystemTime,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let milliseconds = timestamp
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    serializer.serialize_u128(milliseconds)
+}
+
 pub fn ser_http_status<S: Serializer>(
     status: &fastly::http::StatusCode,
     s: S,

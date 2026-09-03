@@ -4,7 +4,7 @@ use tracing_fastly::{
     CorrelationLayer, StructuredEvent, StructuredEventSink,
     serialize::{
         self,
-        datadog::{TraceLog, level_name},
+        datadog::{Tags, TraceLog},
     },
 };
 use tracing_subscriber::prelude::*;
@@ -38,12 +38,12 @@ impl StructuredEventSink for TraceSink {
 
         let row = TraceLog {
             ddsource: "fastly",
-            ddtags: "env:production",
+            ddtags: Tags::new().with("env", "production"),
             hostname: fastly::compute_runtime::hostname(),
             timestamp: event.timestamp,
             message: event.message.to_owned(),
             service: &self.service_name,
-            status: level_name(event.level),
+            status: event.level,
             fields,
         };
         if let Err(error) = serialize::write_ndjson_row(&self.endpoint, &row) {
