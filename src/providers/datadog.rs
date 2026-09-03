@@ -83,11 +83,11 @@ impl fmt::Display for Tags {
 #[derive(Debug, Serialize)]
 pub struct TraceLog<'a> {
     pub ddsource: &'a str,
-    pub ddtags: Tags,
+    pub ddtags: &'a Tags,
     pub hostname: &'a str,
     #[serde(serialize_with = "ser_unix_milliseconds")]
     pub timestamp: SystemTime,
-    pub message: String,
+    pub message: &'a str,
     pub service: &'a str,
     #[serde(serialize_with = "ser_level")]
     pub status: Level,
@@ -129,10 +129,10 @@ impl StructuredEventSink for TraceSink {
 
         let row = TraceLog {
             ddsource: &self.source,
-            ddtags: self.tags.clone(),
+            ddtags: &self.tags,
             hostname: fastly::compute_runtime::hostname(),
             timestamp: event.timestamp,
-            message: event.message.to_owned(),
+            message: &event.message,
             service: &self.service,
             status: event.level,
             fields,

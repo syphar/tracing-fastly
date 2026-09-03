@@ -1,20 +1,30 @@
 use fastly::log::Endpoint;
-use tracing_fastly::{
-    StructuredEventLayer,
-    providers::datadog::{Tags, TraceSink},
-};
+use std::io;
+use tracing_fastly::{StructuredEventLayer, providers::datadog};
 use tracing_subscriber::prelude::*;
 
 fn setup_logging(service_name: &str) {
-    let structured_layer = Endpoint::try_from_name("trace_logs").ok().map(|endpoint| {
-        let sink =
-            TraceSink::new(endpoint, service_name).with_tags(Tags::new().with("env", "production"));
-        StructuredEventLayer::new(sink)
-    });
+    let endpoint = Endpoint::from_name("trace_logs");
 
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().compact().with_ansi(false))
-        .with(structured_layer)
+        // log to stderr in compact format, for `fastly log-tail` and the
+        // log-tailing UI in the fastly dashboard.
+        .with(
+            tracing_subscriber::fmt::layer()
+                .compact()
+                .with_writer(io::stderr)
+                .with_ansi(false),
+        )
+        .with(
+            // `StructuredEventLayer` will package the span & event info into a
+            // structured event that is easier to handle when we then
+            // want to emit the log-record.
+            StructuredEventLayer::new(
+                // create the log-sink with datadog settings
+                datadog::TraceSink::new(endpoint, service_name)
+                    .with_tags(datadog::Tags::new().with("env", "production")),
+            ),
+        )
         .init();
 }
 
