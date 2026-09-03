@@ -1,5 +1,8 @@
 use serde::{Serialize, Serializer, ser::Error as _};
-use std::{io::Write, time::Duration};
+use std::{
+    io::Write,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use tracing_subscriber::fmt::MakeWriter;
 
 /// Serializes one value as JSON followed by a newline.
@@ -13,9 +16,9 @@ where
     writer.write_all(b"\n").map_err(serde_json::Error::io)
 }
 
-pub fn ser_unix_seconds<S: Serializer>(t: &std::time::SystemTime, s: S) -> Result<S::Ok, S::Error> {
+pub fn ser_unix_seconds<S: Serializer>(t: &SystemTime, s: S) -> Result<S::Ok, S::Error> {
     let secs = t
-        .duration_since(std::time::UNIX_EPOCH)
+        .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
         .unwrap_or(0.0);
     s.serialize_f64(secs)
@@ -25,15 +28,12 @@ pub fn ser_duration_ms<S: Serializer>(duration: &Duration, s: S) -> Result<S::Ok
     s.serialize_f64(duration.as_secs_f64() * 1000.0)
 }
 
-pub fn ser_unix_milliseconds<S>(
-    timestamp: &std::time::SystemTime,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
+pub fn ser_unix_milliseconds<S>(timestamp: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     let milliseconds = timestamp
-        .duration_since(std::time::UNIX_EPOCH)
+        .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or(0);
     serializer.serialize_u128(milliseconds)
@@ -66,7 +66,6 @@ mod tests {
     use serde::Serialize;
     use serde_json::json;
     use std::sync::Mutex;
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     #[test]
     fn unix_seconds_is_a_number() {
