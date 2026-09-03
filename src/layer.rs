@@ -1,4 +1,4 @@
-use crate::event::{EventVisitor, SpanFields, StructuredEvent, StructuredEventSink};
+use crate::event::{EventVisitor, StructuredEvent, StructuredEventSink};
 use serde_json::{Map, Value};
 use std::time::SystemTime;
 use tracing::{
@@ -87,13 +87,12 @@ where
         let mut visitor = EventVisitor::new();
         event.record(&mut visitor);
 
-        let mut span_fields = SpanFields::default();
         if let Some(scope) = ctx.event_scope(event) {
             for span in scope.from_root() {
                 if let Some(state) = span.extensions().get::<SpanState>() {
                     for (name, value) in &state.values {
-                        span_fields
-                            .values
+                        visitor
+                            .fields
                             .entry(name.clone())
                             .or_insert_with(|| value.clone());
                     }
@@ -106,7 +105,6 @@ where
             level: *event.metadata().level(),
             message: &visitor.message,
             fields: &visitor.fields,
-            span_fields: &span_fields,
         };
         self.sink.emit(&structured);
     }
@@ -123,7 +121,7 @@ mod tests {
     #[derive(Default, Clone)]
     struct Captured {
         message: String,
-        span_fields: Map<String, Value>,
+        fields: Map<String, Value>,
     }
 
     #[derive(Clone, Default)]
@@ -133,7 +131,7 @@ mod tests {
         fn emit(&self, event: &StructuredEvent<'_>) {
             *self.0.lock().unwrap() = Some(Captured {
                 message: event.message.to_owned(),
-                span_fields: event.span_fields.values.clone(),
+                fields: event.fields.clone(),
             });
         }
     }
@@ -158,9 +156,9 @@ mod tests {
             let _guard = span.enter();
             tracing::info!("hello");
         });
-        assert_eq!(c.span_fields["request_id"], serde_json::json!("abc-123"));
-        assert_eq!(c.span_fields["attempt"], serde_json::json!(2));
-        assert_eq!(c.span_fields["sampled"], serde_json::json!(true));
+        assert_eq!(c.fields["request_id"], serde_json::json!("abc-123"));
+        assert_eq!(c.fields["attempt"], serde_json::json!(2));
+        assert_eq!(c.fields["sampled"], serde_json::json!(true));
         assert_eq!(c.message, "hello");
     }
 
@@ -172,7 +170,7 @@ mod tests {
             let _guard = span.enter();
             tracing::info!("hello");
         });
-        assert_eq!(c.span_fields["request_id"], serde_json::json!("late-id"));
+        assert_eq!(c.fields["request_id"], serde_json::json!("late-id"));
     }
 
     #[test]
@@ -184,7 +182,18 @@ mod tests {
             let _inner_guard = inner.enter();
             tracing::info!("hello");
         });
-        assert_eq!(c.span_fields["request_id"], serde_json::json!("root-id"));
-        assert_eq!(c.span_fields["operation"], serde_json::json!("lookup"));
+        assert_eq!(c.fields["request_id"], serde_json::json!("root-id"));
+        assert_eq!(c.fields["operation"], serde_json::json!("lookup"));
+    }
+
+    #[test]
+    fn event_fields_override_span_fields() {
+        let c = capture(|| {
+            let span = info_span!("request", backend = "default");
+            let _guard = span.enter();
+            tracing::info!(backend = "origin", "hello");
+        });
+
+        assert_eq!(c.fields["backend"], serde_json::json!("origin"));
     }
 }

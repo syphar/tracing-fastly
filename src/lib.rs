@@ -4,5 +4,5 @@ pub mod providers;
 
 pub mod serialize;
 
-pub use event::{SpanFields, StructuredEvent, StructuredEventSink};
+pub use event::{StructuredEvent, StructuredEventSink};
 pub use layer::StructuredEventLayer;

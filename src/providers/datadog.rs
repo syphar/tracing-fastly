@@ -91,7 +91,7 @@ pub struct TraceLog<'a> {
     pub service: &'a str,
     #[serde(serialize_with = "ser_level")]
     pub status: Level,
-    pub fields: Map<String, Value>,
+    pub fields: &'a Map<String, Value>,
 }
 
 /// Writes structured tracing events to a Fastly Datadog logging endpoint.
@@ -125,8 +125,6 @@ impl TraceSink {
 
 impl StructuredEventSink for TraceSink {
     fn emit(&self, event: &StructuredEvent<'_>) {
-        let fields = merge_fields(&event.span_fields.values, event.fields);
-
         let row = TraceLog {
             ddsource: &self.source,
             ddtags: &self.tags,
@@ -135,22 +133,13 @@ impl StructuredEventSink for TraceSink {
             message: event.message,
             service: &self.service,
             status: event.level,
-            fields,
+            fields: event.fields,
         };
 
         if let Err(error) = write_ndjson_row(&self.endpoint, &row) {
             eprintln!("failed to write Datadog trace log: {error}");
         }
     }
-}
-
-fn merge_fields(
-    span_fields: &Map<String, Value>,
-    event_fields: &Map<String, Value>,
-) -> Map<String, Value> {
-    let mut fields = span_fields.clone();
-    fields.extend(event_fields.clone());
-    fields
 }
 
 /// serialize a `tracing::Level` with datadog convention:
@@ -186,7 +175,7 @@ mod tests {
             message: "handled request",
             service: "docs.rs fastly WASM",
             status: Level::INFO,
-            fields: [
+            fields: &[
                 ("backend".to_owned(), json!("origin")),
                 ("http_status".to_owned(), json!(200)),
             ]
@@ -223,7 +212,7 @@ mod tests {
                 message: "",
                 service: "service",
                 status: level,
-                fields: Map::new(),
+                fields: &Map::new(),
             })
             .unwrap()["status"]
                 .clone()
@@ -246,35 +235,6 @@ mod tests {
         assert_eq!(
             serde_json::to_value(tags).unwrap(),
             json!("env:production,version:1.2.3,canary")
-        );
-    }
-
-    #[test]
-    fn span_and_event_fields_share_one_namespace() {
-        let span_fields = [
-            ("request_id".to_owned(), json!("req-123")),
-            ("route".to_owned(), json!("/crates/:name")),
-            ("backend".to_owned(), json!("span-backend")),
-        ]
-        .into_iter()
-        .collect();
-        let event_fields = [
-            ("backend".to_owned(), json!("event-backend")),
-            ("status".to_owned(), json!(200)),
-        ]
-        .into_iter()
-        .collect();
-
-        assert_eq!(
-            merge_fields(&span_fields, &event_fields),
-            [
-                ("request_id".to_owned(), json!("req-123")),
-                ("route".to_owned(), json!("/crates/:name")),
-                ("backend".to_owned(), json!("event-backend")),
-                ("status".to_owned(), json!(200)),
-            ]
-            .into_iter()
-            .collect()
         );
     }
 }

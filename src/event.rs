@@ -10,7 +10,6 @@ pub struct StructuredEvent<'a> {
     pub level: Level,
     pub message: &'a str,
     pub fields: &'a Map<String, Value>,
-    pub span_fields: &'a SpanFields,
 }
 
 impl StructuredEvent<'_> {
@@ -22,25 +21,6 @@ impl StructuredEvent<'_> {
 /// Receives normalized tracing events for conversion into an application-defined format.
 pub trait StructuredEventSink: Send + Sync + 'static {
     fn emit(&self, event: &StructuredEvent<'_>);
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct SpanFields {
-    pub(crate) values: Map<String, Value>,
-}
-
-impl SpanFields {
-    pub fn get(&self, name: &str) -> Option<&Value> {
-        self.values.get(name)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&str, &Value)> + '_ {
-        self.values.iter().map(|(key, value)| (key.as_str(), value))
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
-    }
 }
 
 pub(crate) struct EventVisitor {
@@ -149,30 +129,12 @@ mod tests {
     #[test]
     fn payload_is_none_when_empty() {
         let fields = Map::new();
-        let span_fields = SpanFields::default();
         let ev = StructuredEvent {
             timestamp: SystemTime::UNIX_EPOCH,
             level: Level::INFO,
             message: "hi",
             fields: &fields,
-            span_fields: &span_fields,
         };
         assert!(ev.payload().is_none());
-    }
-
-    #[test]
-    fn span_fields_lookup() {
-        let fields = SpanFields {
-            values: [
-                ("request_id".to_owned(), json!("abc")),
-                ("sampled".to_owned(), json!(true)),
-            ]
-            .into_iter()
-            .collect(),
-        };
-        assert_eq!(fields.get("request_id"), Some(&json!("abc")));
-        assert_eq!(fields.get("sampled"), Some(&json!(true)));
-        assert_eq!(fields.get("missing"), None);
-        assert!(!fields.is_empty());
     }
 }
