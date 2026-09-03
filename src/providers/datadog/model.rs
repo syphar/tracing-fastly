@@ -1,6 +1,5 @@
-use super::ser_tracing_level;
 use crate::serialize;
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
 use std::time::SystemTime;
 use tracing::Level;
@@ -24,6 +23,22 @@ pub struct TraceLog<'a> {
     #[serde(serialize_with = "ser_tracing_level")]
     pub status: Level,
     pub fields: &'a Map<String, Value>,
+}
+
+/// serialize a `tracing::Level` with datadog convention:
+/// * lower-case
+/// * trace becomes debug
+fn ser_tracing_level<S>(level: &Level, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let status = match *level {
+        Level::ERROR => "error",
+        Level::WARN => "warn",
+        Level::INFO => "info",
+        Level::DEBUG | Level::TRACE => "debug",
+    };
+    serializer.serialize_str(status)
 }
 
 #[cfg(test)]
@@ -67,5 +82,29 @@ mod tests {
                 },
             })
         );
+    }
+
+    #[test]
+    fn tracing_levels_serialize_as_datadog_statuses() {
+        fn serialized_status(level: Level) -> Value {
+            serde_json::to_value(TraceLog {
+                ddsource: "fastly",
+                ddtags: "",
+                hostname: "host",
+                timestamp: UNIX_EPOCH,
+                message: "",
+                service: "service",
+                status: level,
+                fields: &Map::new(),
+            })
+            .unwrap()["status"]
+                .clone()
+        }
+
+        assert_eq!(serialized_status(Level::ERROR), json!("error"));
+        assert_eq!(serialized_status(Level::WARN), json!("warn"));
+        assert_eq!(serialized_status(Level::INFO), json!("info"));
+        assert_eq!(serialized_status(Level::DEBUG), json!("debug"));
+        assert_eq!(serialized_status(Level::TRACE), json!("debug"));
     }
 }

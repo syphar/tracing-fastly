@@ -3,9 +3,7 @@ mod model;
 pub use model::TraceLog;
 
 use crate::{StructuredEvent, StructuredEventSink, serialize};
-use serde::Serializer;
 use std::{io::Write, sync::Mutex};
-use tracing::Level;
 
 /// Writes structured tracing events to a Fastly Datadog logging endpoint.
 pub struct TraceSink<W> {
@@ -64,22 +62,6 @@ where
     }
 }
 
-/// serialize a `tracing::Level` with datadog convention:
-/// * lower-case
-/// * trace becomes debug
-fn ser_tracing_level<S>(level: &Level, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let status = match *level {
-        Level::ERROR => "error",
-        Level::WARN => "warn",
-        Level::INFO => "info",
-        Level::DEBUG | Level::TRACE => "debug",
-    };
-    serializer.serialize_str(status)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,6 +71,7 @@ mod tests {
         sync::{Arc, Mutex},
         time::UNIX_EPOCH,
     };
+    use tracing::Level;
 
     #[derive(Clone, Default)]
     struct RecordWriter(Arc<Mutex<Vec<Vec<u8>>>>);
@@ -102,30 +85,6 @@ mod tests {
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
         }
-    }
-
-    #[test]
-    fn tracing_levels_serialize_as_datadog_statuses() {
-        fn serialized_status(level: Level) -> Value {
-            serde_json::to_value(TraceLog {
-                ddsource: "fastly",
-                ddtags: "",
-                hostname: "host",
-                timestamp: UNIX_EPOCH,
-                message: "",
-                service: "service",
-                status: level,
-                fields: &Map::new(),
-            })
-            .unwrap()["status"]
-                .clone()
-        }
-
-        assert_eq!(serialized_status(Level::ERROR), json!("error"));
-        assert_eq!(serialized_status(Level::WARN), json!("warn"));
-        assert_eq!(serialized_status(Level::INFO), json!("info"));
-        assert_eq!(serialized_status(Level::DEBUG), json!("debug"));
-        assert_eq!(serialized_status(Level::TRACE), json!("debug"));
     }
 
     #[test]
