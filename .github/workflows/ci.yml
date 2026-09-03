@@ -39,4 +39,4 @@ jobs:
         with:
           cache: true
 
-      - run: just tests
+      - run: just test

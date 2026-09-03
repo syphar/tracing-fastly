@@ -16,6 +16,6 @@ lint:
     cargo machete
     cargo audit
 
-tests:
+test:
     cargo nextest run
     cargo test --doc
