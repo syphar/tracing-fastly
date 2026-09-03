@@ -1,4 +1,7 @@
-use crate::{StructuredEvent, StructuredEventSink, serialize::ser_unix_milliseconds};
+use crate::{
+    StructuredEvent, StructuredEventSink,
+    serialize::{ser_unix_milliseconds, write_ndjson_row},
+};
 use fastly::log::Endpoint;
 use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
@@ -135,7 +138,7 @@ impl StructuredEventSink for TraceSink {
             fields,
         };
 
-        if let Err(error) = super::write_ndjson_row(&self.endpoint, &row) {
+        if let Err(error) = write_ndjson_row(&self.endpoint, &row) {
             eprintln!("failed to write Datadog trace log: {error}");
         }
     }

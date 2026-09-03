@@ -1,5 +1,6 @@
 mod event;
 mod layer;
+pub mod providers;
 
 pub mod serialize;
 

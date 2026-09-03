@@ -1,7 +1,7 @@
 use fastly::log::Endpoint;
 use tracing_fastly::{
     StructuredEventLayer,
-    serialize::datadog::{Tags, TraceSink},
+    providers::datadog::{Tags, TraceSink},
 };
 use tracing_subscriber::prelude::*;
 

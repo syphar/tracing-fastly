@@ -1,5 +1,3 @@
-pub mod datadog;
-
 use serde::{Serialize, Serializer, ser::Error as _};
 use std::{io::Write, time::Duration};
 use tracing_subscriber::fmt::MakeWriter;
