@@ -34,12 +34,10 @@ where
     where
         T: Serialize,
     {
-        let mut writer = self.writer.lock().map_err(|_| {
-            serde_json::Error::io(io::Error::new(
-                io::ErrorKind::Other,
-                "NDJSON writer lock poisoned",
-            ))
-        })?;
+        let mut writer = self
+            .writer
+            .lock()
+            .map_err(|_| serde_json::Error::io(io::Error::other("NDJSON writer lock poisoned")))?;
 
         write_ndjson_row(&mut *writer, row)
     }
