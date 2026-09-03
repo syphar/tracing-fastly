@@ -1,3 +1,8 @@
+//! Example how to send trace logs to datadog.
+//!
+//! Additionally, compact format to stderr for log-tailing in
+//! fastly UI / CLI.
+
 use fastly::log::Endpoint;
 use std::io;
 use tracing_fastly::{StructuredEventLayer, providers::datadog};

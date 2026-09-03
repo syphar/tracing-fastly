@@ -1,3 +1,8 @@
+//! a simple tracing / logging config, not using this library at all.
+//!
+//! Just printing the compact format to stdout, just showing that
+//! it can work super easily.
+
 use fastly::log::Endpoint;
 use std::io;
 use tracing::{info, info_span, warn};
