@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::fmt;
+use thiserror::Error;
 
 /// A comma-separated collection of Datadog tags.
 ///
@@ -56,33 +57,17 @@ impl Tags {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum TagError {
+    #[error("tag must not be empty")]
     Empty,
+    #[error("tag must start with a letter")]
     MustStartWithLetter,
+    #[error("tag {part} contains invalid character {character:?}")]
     InvalidCharacter { part: &'static str, character: char },
+    #[error("tag has {characters} characters; maximum is 200")]
     TooLong { characters: usize },
 }
-
-impl fmt::Display for TagError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => formatter.write_str("tag must not be empty"),
-            Self::MustStartWithLetter => formatter.write_str("tag must start with a letter"),
-            Self::InvalidCharacter { part, character } => {
-                write!(
-                    formatter,
-                    "tag {part} contains invalid character {character:?}"
-                )
-            }
-            Self::TooLong { characters } => {
-                write!(formatter, "tag has {characters} characters; maximum is 200")
-            }
-        }
-    }
-}
-
-impl std::error::Error for TagError {}
 
 fn validate_tag(key: &str, value: &str) -> Result<(), TagError> {
     validate_start(key)?;

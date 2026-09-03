@@ -2,7 +2,7 @@ mod model;
 mod tags;
 
 pub use model::TraceLog;
-pub use tags::Tags;
+pub use tags::{TagError, Tags};
 
 use crate::{StructuredEvent, StructuredEventSink, serialize};
 use fastly::log::Endpoint;
