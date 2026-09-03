@@ -13,12 +13,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+
+      - name: restore build & cargo cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: install clippy & rustfmt
+        run: rustup components add clippy rustfmt
+
       - uses: jdx/mise-action@v3
         with:
           cache: true
+
       - run: just lint
 
   tests:
@@ -26,8 +31,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+
+      - name: restore build & cargo cache
+        uses: Swatinem/rust-cache@v2
+
       - uses: jdx/mise-action@v3
         with:
           cache: true
+
       - run: just tests
