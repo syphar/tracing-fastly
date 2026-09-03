@@ -153,6 +153,9 @@ fn merge_fields(
     fields
 }
 
+/// serialize a `tracing::Level` with datadog convention:
+/// * lower-case
+/// * trace = debug
 fn ser_level<S>(level: &Level, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
