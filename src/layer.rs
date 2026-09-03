@@ -1,4 +1,5 @@
-use crate::event::{CorrelationFields, EventVisitor, StructuredEvent, StructuredEventSink};
+use crate::event::{EventVisitor, SpanFields, StructuredEvent, StructuredEventSink};
+use serde_json::{Map, Value};
 use std::time::SystemTime;
 use tracing::{
     Event, Subscriber,
@@ -10,72 +11,55 @@ use tracing_subscriber::{
     registry::LookupSpan,
 };
 
-pub struct CorrelationLayer<K> {
+pub struct StructuredEventLayer<K> {
     sink: K,
-    correlate: Vec<&'static str>,
 }
 
-impl<K> CorrelationLayer<K> {
+impl<K> StructuredEventLayer<K> {
     pub fn new(sink: K) -> Self {
-        Self {
-            sink,
-            correlate: Vec::new(),
-        }
-    }
-
-    /// Adds a span field to copy into each event's correlation fields.
-    ///
-    /// If multiple spans contain the field, the outermost span wins.
-    pub fn correlate(mut self, name: &'static str) -> Self {
-        self.correlate.push(name);
-        self
-    }
-
-    /// Adds span fields to copy into each event's correlation fields.
-    ///
-    /// If multiple spans contain the same field, the outermost span wins.
-    pub fn correlate_all(mut self, names: impl IntoIterator<Item = &'static str>) -> Self {
-        self.correlate.extend(names);
-        self
+        Self { sink }
     }
 }
 
 #[derive(Default)]
 struct SpanState {
-    values: Vec<(&'static str, String)>,
+    values: Map<String, Value>,
 }
 
-struct CorrelationVisitor<'a> {
-    wanted: &'a [&'static str],
-    out: &'a mut Vec<(&'static str, String)>,
+struct SpanVisitor<'a> {
+    out: &'a mut Map<String, Value>,
 }
 
-impl CorrelationVisitor<'_> {
-    fn capture(&mut self, name: &str, value: impl FnOnce() -> String) {
-        let Some(&key) = self.wanted.iter().find(|w| **w == name) else {
-            return;
-        };
-        let value = value();
+impl SpanVisitor<'_> {
+    fn insert(&mut self, field: &Field, value: Value) {
+        self.out.insert(field.name().to_owned(), value);
+    }
+}
 
-        match self.out.iter_mut().find(|(k, _)| *k == key) {
-            Some(slot) => slot.1 = value,
-            None => self.out.push((key, value)),
+impl Visit for SpanVisitor<'_> {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        self.insert(field, Value::String(value.to_owned()));
+    }
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        self.insert(field, Value::Number(value.into()));
+    }
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        self.insert(field, Value::Number(value.into()));
+    }
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        self.insert(field, Value::Bool(value));
+    }
+    fn record_f64(&mut self, field: &Field, value: f64) {
+        if let Some(number) = serde_json::Number::from_f64(value) {
+            self.insert(field, Value::Number(number));
         }
     }
-}
-
-impl Visit for CorrelationVisitor<'_> {
-    fn record_str(&mut self, field: &Field, value: &str) {
-        self.capture(field.name(), || value.to_owned());
-    }
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        self.capture(field.name(), || {
-            format!("{value:?}").trim_matches('"').to_owned()
-        });
+        self.insert(field, Value::String(format!("{value:?}")));
     }
 }
 
-impl<S, K> Layer<S> for CorrelationLayer<K>
+impl<S, K> Layer<S> for StructuredEventLayer<K>
 where
     S: Subscriber + for<'lookup> LookupSpan<'lookup>,
     K: StructuredEventSink,
@@ -83,8 +67,7 @@ where
     fn on_new_span(&self, attrs: &Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
         let Some(span) = ctx.span(id) else { return };
         let mut state = SpanState::default();
-        attrs.record(&mut CorrelationVisitor {
-            wanted: &self.correlate,
+        attrs.record(&mut SpanVisitor {
             out: &mut state.values,
         });
         span.extensions_mut().insert(state);
@@ -94,8 +77,7 @@ where
         let Some(span) = ctx.span(id) else { return };
         let mut ext = span.extensions_mut();
         if let Some(state) = ext.get_mut::<SpanState>() {
-            values.record(&mut CorrelationVisitor {
-                wanted: &self.correlate,
+            values.record(&mut SpanVisitor {
                 out: &mut state.values,
             });
         }
@@ -105,14 +87,15 @@ where
         let mut visitor = EventVisitor::new();
         event.record(&mut visitor);
 
-        let mut correlation = CorrelationFields::default();
+        let mut span_fields = SpanFields::default();
         if let Some(scope) = ctx.event_scope(event) {
             for span in scope.from_root() {
                 if let Some(state) = span.extensions().get::<SpanState>() {
-                    for (k, v) in &state.values {
-                        if correlation.get(k).is_none() {
-                            correlation.values.push((*k, v.clone()));
-                        }
+                    for (name, value) in &state.values {
+                        span_fields
+                            .values
+                            .entry(name.clone())
+                            .or_insert_with(|| value.clone());
                     }
                 }
             }
@@ -123,7 +106,7 @@ where
             level: *event.metadata().level(),
             message: &visitor.message,
             fields: &visitor.fields,
-            correlation: &correlation,
+            span_fields: &span_fields,
         };
         self.sink.emit(&structured);
     }
@@ -140,7 +123,7 @@ mod tests {
     #[derive(Default, Clone)]
     struct Captured {
         message: String,
-        correlation: Vec<(String, String)>,
+        span_fields: Map<String, Value>,
     }
 
     #[derive(Clone, Default)]
@@ -150,133 +133,58 @@ mod tests {
         fn emit(&self, event: &StructuredEvent<'_>) {
             *self.0.lock().unwrap() = Some(Captured {
                 message: event.message.to_owned(),
-                correlation: event
-                    .correlation
-                    .iter()
-                    .map(|(k, v)| (k.to_owned(), v.to_owned()))
-                    .collect(),
+                span_fields: event.span_fields.values.clone(),
             });
         }
     }
 
-    fn capture<F: FnOnce()>(layer: CorrelationLayer<CaptureSink>, f: F) -> Captured {
+    fn capture<F: FnOnce()>(f: F) -> Captured {
         let sink = CaptureSink::default();
         let slot = sink.0.clone();
-        let layer = CorrelationLayer { sink, ..layer };
+        let layer = StructuredEventLayer::new(sink);
         with_default(registry().with(layer), f);
         slot.lock().unwrap().take().unwrap_or_default()
     }
 
-    fn rid(c: &Captured) -> Option<&str> {
-        c.correlation
-            .iter()
-            .find(|(k, _)| k == "request_id")
-            .map(|(_, v)| v.as_str())
-    }
-
     #[test]
-    fn request_id_captured_from_span_creation() {
-        let c = capture(
-            CorrelationLayer::new(CaptureSink::default()).correlate("request_id"),
-            || {
-                let span = info_span!("req", request_id = "abc-123");
-                let _g = span.enter();
-                tracing::info!("hello");
-            },
-        );
-        assert_eq!(rid(&c), Some("abc-123"));
+    fn captures_all_typed_span_fields() {
+        let c = capture(|| {
+            let span = info_span!(
+                "req",
+                request_id = "abc-123",
+                attempt = 2_u64,
+                sampled = true
+            );
+            let _guard = span.enter();
+            tracing::info!("hello");
+        });
+        assert_eq!(c.span_fields["request_id"], serde_json::json!("abc-123"));
+        assert_eq!(c.span_fields["attempt"], serde_json::json!(2));
+        assert_eq!(c.span_fields["sampled"], serde_json::json!(true));
         assert_eq!(c.message, "hello");
     }
 
     #[test]
-    fn request_id_captured_when_recorded_after_span_creation() {
-        let c = capture(
-            CorrelationLayer::new(CaptureSink::default()).correlate("request_id"),
-            || {
-                let span = info_span!("req", request_id = tracing::field::Empty);
-                span.record("request_id", "late-id");
-                let _g = span.enter();
-                tracing::info!("hello");
-            },
-        );
-        assert_eq!(rid(&c), Some("late-id"));
+    fn captures_fields_recorded_after_span_creation() {
+        let c = capture(|| {
+            let span = info_span!("req", request_id = tracing::field::Empty);
+            span.record("request_id", "late-id");
+            let _guard = span.enter();
+            tracing::info!("hello");
+        });
+        assert_eq!(c.span_fields["request_id"], serde_json::json!("late-id"));
     }
 
     #[test]
-    fn request_id_inherited_from_ancestor_span() {
-        let c = capture(
-            CorrelationLayer::new(CaptureSink::default()).correlate("request_id"),
-            || {
-                let outer = info_span!("req", request_id = "root-id");
-                let _g = outer.enter();
-                let inner = info_span!("inner");
-                let _g2 = inner.enter();
-                tracing::info!("hello");
-            },
-        );
-        assert_eq!(rid(&c), Some("root-id"));
-    }
-
-    #[test]
-    fn outermost_span_wins() {
-        let c = capture(
-            CorrelationLayer::new(CaptureSink::default()).correlate("request_id"),
-            || {
-                let outer = info_span!("req", request_id = "root-id");
-                let _g = outer.enter();
-                let inner = info_span!("inner", request_id = "inner-id");
-                let _g2 = inner.enter();
-                tracing::info!("hello");
-            },
-        );
-        assert_eq!(rid(&c), Some("root-id"));
-    }
-
-    #[test]
-    fn absent_when_no_ancestor_has_it() {
-        let c = capture(
-            CorrelationLayer::new(CaptureSink::default()).correlate("request_id"),
-            || {
-                let span = info_span!("plain");
-                let _g = span.enter();
-                tracing::info!("hello");
-            },
-        );
-        assert_eq!(rid(&c), None);
-    }
-
-    #[test]
-    fn only_configured_fields_are_correlated() {
-        let c = capture(
-            CorrelationLayer::new(CaptureSink::default()).correlate("request_id"),
-            || {
-                let span = info_span!("req", other = "nope", request_id = "real");
-                let _g = span.enter();
-                tracing::info!("hello");
-            },
-        );
-        assert_eq!(rid(&c), Some("real"));
-
-        assert!(c.correlation.iter().all(|(k, _)| k != "other"));
-    }
-
-    #[test]
-    fn multiple_fields_correlated() {
-        let c = capture(
-            CorrelationLayer::new(CaptureSink::default()).correlate_all(["request_id", "trace_id"]),
-            || {
-                let span = info_span!("req", request_id = "r1", trace_id = "t1");
-                let _g = span.enter();
-                tracing::info!("hello");
-            },
-        );
-        assert_eq!(rid(&c), Some("r1"));
-        assert_eq!(
-            c.correlation
-                .iter()
-                .find(|(k, _)| k == "trace_id")
-                .map(|(_, v)| v.as_str()),
-            Some("t1")
-        );
+    fn outermost_span_wins_for_duplicate_names() {
+        let c = capture(|| {
+            let outer = info_span!("req", request_id = "root-id");
+            let _outer_guard = outer.enter();
+            let inner = info_span!("inner", request_id = "inner-id", operation = "lookup");
+            let _inner_guard = inner.enter();
+            tracing::info!("hello");
+        });
+        assert_eq!(c.span_fields["request_id"], serde_json::json!("root-id"));
+        assert_eq!(c.span_fields["operation"], serde_json::json!("lookup"));
     }
 }

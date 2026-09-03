@@ -89,6 +89,7 @@ pub struct TraceLog<'a> {
     #[serde(serialize_with = "ser_level")]
     pub status: Level,
     pub fields: Map<String, Value>,
+    pub span: Map<String, Value>,
 }
 
 /// Writes structured tracing events to a Fastly Datadog logging endpoint.
@@ -122,11 +123,6 @@ impl TraceSink {
 
 impl StructuredEventSink for TraceSink {
     fn emit(&self, event: &StructuredEvent<'_>) {
-        let mut fields = event.fields.clone();
-        for (name, value) in event.correlation.iter() {
-            fields.insert(name.to_owned(), value.into());
-        }
-
         let row = TraceLog {
             ddsource: &self.source,
             ddtags: self.tags.clone(),
@@ -135,7 +131,8 @@ impl StructuredEventSink for TraceSink {
             message: event.message.to_owned(),
             service: &self.service,
             status: event.level,
-            fields,
+            fields: event.fields.clone(),
+            span: event.span_fields.values.clone(),
         };
 
         if let Err(error) = super::write_ndjson_row(&self.endpoint, &row) {
@@ -180,6 +177,9 @@ mod tests {
             ]
             .into_iter()
             .collect(),
+            span: [("request_id".to_owned(), json!("req-123"))]
+                .into_iter()
+                .collect(),
         };
 
         assert_eq!(
@@ -195,6 +195,9 @@ mod tests {
                 "fields": {
                     "backend": "origin",
                     "http_status": 200,
+                },
+                "span": {
+                    "request_id": "req-123",
                 },
             })
         );
@@ -212,6 +215,7 @@ mod tests {
                 service: "service",
                 status: level,
                 fields: Map::new(),
+                span: Map::new(),
             })
             .unwrap()["status"]
                 .clone()

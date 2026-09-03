@@ -10,7 +10,7 @@ pub struct StructuredEvent<'a> {
     pub level: Level,
     pub message: &'a str,
     pub fields: &'a Map<String, Value>,
-    pub correlation: &'a CorrelationFields,
+    pub span_fields: &'a SpanFields,
 }
 
 impl StructuredEvent<'_> {
@@ -25,20 +25,17 @@ pub trait StructuredEventSink: Send + Sync + 'static {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct CorrelationFields {
-    pub(crate) values: Vec<(&'static str, String)>,
+pub struct SpanFields {
+    pub(crate) values: Map<String, Value>,
 }
 
-impl CorrelationFields {
-    pub fn get(&self, name: &str) -> Option<&str> {
-        self.values
-            .iter()
-            .find(|(k, _)| *k == name)
-            .map(|(_, v)| v.as_str())
+impl SpanFields {
+    pub fn get(&self, name: &str) -> Option<&Value> {
+        self.values.get(name)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&'static str, &str)> + '_ {
-        self.values.iter().map(|(k, v)| (*k, v.as_str()))
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &Value)> + '_ {
+        self.values.iter().map(|(key, value)| (key.as_str(), value))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -152,25 +149,30 @@ mod tests {
     #[test]
     fn payload_is_none_when_empty() {
         let fields = Map::new();
-        let correlation = CorrelationFields::default();
+        let span_fields = SpanFields::default();
         let ev = StructuredEvent {
             timestamp: SystemTime::UNIX_EPOCH,
             level: Level::INFO,
             message: "hi",
             fields: &fields,
-            correlation: &correlation,
+            span_fields: &span_fields,
         };
         assert!(ev.payload().is_none());
     }
 
     #[test]
-    fn correlation_fields_lookup() {
-        let cf = CorrelationFields {
-            values: vec![("request_id", "abc".into()), ("trace_id", "xyz".into())],
+    fn span_fields_lookup() {
+        let fields = SpanFields {
+            values: [
+                ("request_id".to_owned(), json!("abc")),
+                ("sampled".to_owned(), json!(true)),
+            ]
+            .into_iter()
+            .collect(),
         };
-        assert_eq!(cf.get("request_id"), Some("abc"));
-        assert_eq!(cf.get("trace_id"), Some("xyz"));
-        assert_eq!(cf.get("missing"), None);
-        assert!(!cf.is_empty());
+        assert_eq!(fields.get("request_id"), Some(&json!("abc")));
+        assert_eq!(fields.get("sampled"), Some(&json!(true)));
+        assert_eq!(fields.get("missing"), None);
+        assert!(!fields.is_empty());
     }
 }

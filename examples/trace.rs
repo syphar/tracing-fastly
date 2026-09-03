@@ -1,6 +1,6 @@
 use fastly::log::Endpoint;
 use tracing_fastly::{
-    CorrelationLayer,
+    StructuredEventLayer,
     serialize::datadog::{Tags, TraceSink},
 };
 use tracing_subscriber::prelude::*;
@@ -9,7 +9,7 @@ fn setup_logging(service_name: &str) {
     let structured_layer = Endpoint::try_from_name("trace_logs").ok().map(|endpoint| {
         let sink =
             TraceSink::new(endpoint, service_name).with_tags(Tags::new().with("env", "production"));
-        CorrelationLayer::new(sink).correlate("request_id")
+        StructuredEventLayer::new(sink)
     });
 
     tracing_subscriber::registry()
