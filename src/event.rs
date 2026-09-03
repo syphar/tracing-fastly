@@ -26,32 +26,21 @@ pub trait StructuredEventSink: Send + Sync + 'static {
     fn emit(&self, event: &StructuredEvent<'_>);
 }
 
-pub(crate) struct EventVisitor {
-    pub(crate) message: String,
-    pub(crate) fields: Map<String, Value>,
+pub(crate) struct JsonFieldVisitor<'a> {
+    fields: &'a mut Map<String, Value>,
 }
 
-impl EventVisitor {
-    pub(crate) fn new() -> Self {
-        Self {
-            message: String::new(),
-            fields: Map::new(),
-        }
+impl<'a> JsonFieldVisitor<'a> {
+    pub(crate) fn new(fields: &'a mut Map<String, Value>) -> Self {
+        Self { fields }
     }
 
     fn insert(&mut self, name: &str, value: Value) {
-        if name == "message" {
-            self.message = match value {
-                Value::String(s) => s,
-                other => other.to_string(),
-            };
-        } else {
-            self.fields.insert(name.to_owned(), value);
-        }
+        self.fields.insert(name.to_owned(), value);
     }
 }
 
-impl Visit for EventVisitor {
+impl Visit for JsonFieldVisitor<'_> {
     fn record_str(&mut self, field: &Field, value: &str) {
         self.insert(field.name(), Value::String(value.to_owned()));
     }
@@ -74,6 +63,16 @@ impl Visit for EventVisitor {
     }
 }
 
+pub(crate) fn take_message(fields: &mut Map<String, Value>) -> String {
+    fields
+        .remove("message")
+        .map(|value| match value {
+            Value::String(message) => message,
+            other => other.to_string(),
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,51 +80,42 @@ mod tests {
 
     #[test]
     fn routes_message_field_to_message() {
-        let mut v = EventVisitor::new();
-        v.insert("message", Value::String("hello".into()));
+        let mut fields = Map::new();
+        fields.insert("message".into(), Value::String("hello".into()));
 
-        assert_eq!(v.message, "hello");
-        assert!(v.fields.is_empty());
+        assert_eq!(take_message(&mut fields), "hello");
+        assert!(fields.is_empty());
     }
 
     #[test]
     fn routes_non_message_fields_to_payload() {
-        let mut v = EventVisitor::new();
-        v.insert("status", Value::Number(200.into()));
-        v.insert("backend", Value::String("foo".into()));
+        let mut fields = Map::new();
+        let mut visitor = JsonFieldVisitor::new(&mut fields);
+        visitor.insert("status", Value::Number(200.into()));
+        visitor.insert("backend", Value::String("foo".into()));
 
-        assert_eq!(v.message, "");
-        assert_eq!(v.fields.len(), 2);
-        assert_eq!(v.fields["status"], json!(200));
-        assert_eq!(v.fields["backend"], json!("foo"));
-    }
-
-    #[test]
-    fn message_last_write_wins() {
-        let mut v = EventVisitor::new();
-        v.insert("message", Value::String("first".into()));
-        v.insert("message", Value::String("second".into()));
-
-        assert_eq!(v.message, "second");
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields["status"], json!(200));
+        assert_eq!(fields["backend"], json!("foo"));
     }
 
     #[test]
     fn coerces_non_string_message_to_string() {
-        let mut v = EventVisitor::new();
-        v.insert("message", Value::Number(42.into()));
+        let mut fields = Map::from_iter([("message".into(), Value::Number(42.into()))]);
 
-        assert_eq!(v.message, "42");
+        assert_eq!(take_message(&mut fields), "42");
     }
 
     #[test]
     fn separates_message_from_other_fields() {
-        let mut v = EventVisitor::new();
-        v.insert("message", Value::String("the message".into()));
-        v.insert("k", Value::Bool(true));
+        let mut fields = Map::from_iter([
+            ("message".into(), Value::String("the message".into())),
+            ("k".into(), Value::Bool(true)),
+        ]);
 
-        assert_eq!(v.message, "the message");
-        assert_eq!(v.fields.len(), 1);
+        assert_eq!(take_message(&mut fields), "the message");
+        assert_eq!(fields.len(), 1);
 
-        assert!(!v.fields.contains_key("message"));
+        assert!(!fields.contains_key("message"));
     }
 }

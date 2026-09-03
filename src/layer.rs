@@ -1,9 +1,8 @@
-use crate::event::{EventVisitor, StructuredEvent, StructuredEventSink};
+use crate::event::{JsonFieldVisitor, StructuredEvent, StructuredEventSink, take_message};
 use serde_json::{Map, Value};
 use std::time::SystemTime;
 use tracing::{
     Event, Subscriber,
-    field::{Field, Visit},
     span::{Attributes, Id, Record},
 };
 use tracing_subscriber::{
@@ -31,39 +30,6 @@ struct SpanState {
     values: Map<String, Value>,
 }
 
-struct SpanVisitor<'a> {
-    out: &'a mut Map<String, Value>,
-}
-
-impl SpanVisitor<'_> {
-    fn insert(&mut self, field: &Field, value: Value) {
-        self.out.insert(field.name().to_owned(), value);
-    }
-}
-
-impl Visit for SpanVisitor<'_> {
-    fn record_str(&mut self, field: &Field, value: &str) {
-        self.insert(field, Value::String(value.to_owned()));
-    }
-    fn record_i64(&mut self, field: &Field, value: i64) {
-        self.insert(field, Value::Number(value.into()));
-    }
-    fn record_u64(&mut self, field: &Field, value: u64) {
-        self.insert(field, Value::Number(value.into()));
-    }
-    fn record_bool(&mut self, field: &Field, value: bool) {
-        self.insert(field, Value::Bool(value));
-    }
-    fn record_f64(&mut self, field: &Field, value: f64) {
-        if let Some(number) = serde_json::Number::from_f64(value) {
-            self.insert(field, Value::Number(number));
-        }
-    }
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        self.insert(field, Value::String(format!("{value:?}")));
-    }
-}
-
 impl<S, K> Layer<S> for StructuredEventLayer<K>
 where
     S: Subscriber + for<'lookup> LookupSpan<'lookup>,
@@ -72,9 +38,7 @@ where
     fn on_new_span(&self, attrs: &Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
         let Some(span) = ctx.span(id) else { return };
         let mut state = SpanState::default();
-        attrs.record(&mut SpanVisitor {
-            out: &mut state.values,
-        });
+        attrs.record(&mut JsonFieldVisitor::new(&mut state.values));
         span.extensions_mut().insert(state);
     }
 
@@ -82,15 +46,14 @@ where
         let Some(span) = ctx.span(id) else { return };
         let mut ext = span.extensions_mut();
         if let Some(state) = ext.get_mut::<SpanState>() {
-            values.record(&mut SpanVisitor {
-                out: &mut state.values,
-            });
+            values.record(&mut JsonFieldVisitor::new(&mut state.values));
         }
     }
 
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
-        let mut visitor = EventVisitor::new();
-        event.record(&mut visitor);
+        let mut fields = Map::new();
+        event.record(&mut JsonFieldVisitor::new(&mut fields));
+        let message = take_message(&mut fields);
 
         if let Some(scope) = ctx.event_scope(event) {
             // `Scope` iterates from the leaf towards the root. Since event fields
@@ -99,10 +62,7 @@ where
             for span in scope {
                 if let Some(state) = span.extensions().get::<SpanState>() {
                     for (name, value) in &state.values {
-                        visitor
-                            .fields
-                            .entry(name.clone())
-                            .or_insert_with(|| value.clone());
+                        fields.entry(name.clone()).or_insert_with(|| value.clone());
                     }
                 }
             }
@@ -111,8 +71,8 @@ where
         let structured = StructuredEvent {
             timestamp: SystemTime::now(),
             level: *event.metadata().level(),
-            message: &visitor.message,
-            fields: &visitor.fields,
+            message: &message,
+            fields: &fields,
         };
         self.sink.emit(&structured);
     }
