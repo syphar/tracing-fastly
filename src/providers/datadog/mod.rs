@@ -2,7 +2,7 @@ mod model;
 
 pub use model::TraceLog;
 
-use crate::{StructuredEvent, StructuredEventSink};
+use crate::{StructuredEvent, StructuredEventSink, serialize};
 use serde::Serializer;
 use std::{io::Write, sync::Mutex};
 use tracing::Level;
@@ -54,28 +54,12 @@ where
             fields: event.fields,
         };
 
-        let json = match serde_json::to_vec(&row) {
-            Ok(json) => json,
-            Err(error) => {
-                eprintln!("failed to serialize Datadog trace log: {error}");
-                return;
-            }
-        };
-
-        // Fastly turns every write into one log line. Serialize first and issue
-        // exactly one write; a retry after a partial write would create a second
-        // malformed log record.
         let Ok(mut writer) = self.writer.lock() else {
             eprintln!("failed to lock Datadog trace log writer");
             return;
         };
-        match writer.write(&json) {
-            Ok(written) if written == json.len() => {}
-            Ok(written) => eprintln!(
-                "failed to write complete Datadog trace log: wrote {written} of {} bytes",
-                json.len()
-            ),
-            Err(error) => eprintln!("failed to write Datadog trace log: {error}"),
+        if let Err(error) = serialize::write_ndjson_row(&mut *writer, &row) {
+            eprintln!("failed to write Datadog trace log: {error}");
         }
     }
 }
