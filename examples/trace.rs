@@ -1,7 +1,7 @@
 use fastly::log::Endpoint;
 use std::io;
 use tracing_fastly::{StructuredEventLayer, providers::datadog};
-use tracing_subscriber::prelude::*;
+use tracing_subscriber::{filter::LevelFilter, prelude::*};
 
 fn setup_logging(service_name: &str) {
     let endpoint = Endpoint::from_name("trace_logs");
@@ -13,7 +13,8 @@ fn setup_logging(service_name: &str) {
             tracing_subscriber::fmt::layer()
                 .compact()
                 .with_writer(io::stderr)
-                .with_ansi(false),
+                .with_ansi(false)
+                .with_filter(LevelFilter::INFO),
         )
         .with(
             // `StructuredEventLayer` will package the span & event info into a
@@ -23,7 +24,8 @@ fn setup_logging(service_name: &str) {
                 // create the log-sink with datadog settings
                 datadog::TraceSink::new(endpoint, service_name)
                     .with_tags("env:production,version:1.0"),
-            ),
+            )
+            .with_filter(LevelFilter::INFO),
         )
         .init();
 }
