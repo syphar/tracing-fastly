@@ -60,32 +60,15 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::RecordWriter;
     use serde_json::{Map, Value, json};
-    use std::{
-        io,
-        sync::{Arc, Mutex},
-        time::UNIX_EPOCH,
-    };
+    use std::time::UNIX_EPOCH;
     use tracing::Level;
-
-    #[derive(Clone, Default)]
-    struct RecordWriter(Arc<Mutex<Vec<Vec<u8>>>>);
-
-    impl Write for RecordWriter {
-        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-            self.0.lock().unwrap().push(bytes.to_vec());
-            Ok(bytes.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
 
     #[test]
     fn sink_emits_each_json_record_with_one_write() {
         let writer = RecordWriter::default();
-        let records = Arc::clone(&writer.0);
+        let records = writer.clone();
         let sink = TraceSink {
             writer: NdjsonWriter::new(writer),
             source: "fastly".to_owned(),
@@ -102,7 +85,7 @@ mod tests {
             fields: &fields,
         });
 
-        let records = records.lock().unwrap();
+        let records = records.records().unwrap();
         assert_eq!(records.len(), 1);
         assert!(!records[0].ends_with(b"\n"));
         assert_eq!(

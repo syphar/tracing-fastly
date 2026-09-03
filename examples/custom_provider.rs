@@ -71,3 +71,33 @@ fn main() {
 
     tracing::info!(backend = "origin", status = 200, "handled request");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use tracing::subscriber::with_default;
+    use tracing_fastly::testing::RecordWriter;
+
+    #[test]
+    fn writes_the_provider_format() {
+        let writer = RecordWriter::default();
+        let records = writer.clone();
+        let subscriber =
+            tracing_subscriber::registry().with(StructuredEventLayer::new(CustomSink::new(writer)));
+
+        with_default(subscriber, || {
+            let request = tracing::info_span!("request", request_id = "req-123");
+            let _guard = request.enter();
+            tracing::info!(status = 200, "handled request");
+        });
+
+        let records = records.records().unwrap();
+        assert_eq!(records.len(), 1);
+        let row: Value = serde_json::from_slice(&records[0]).unwrap();
+        assert_eq!(row["body"], json!("handled request"));
+        assert_eq!(row["severity"], json!("INFO"));
+        assert_eq!(row["attributes"]["request_id"], json!("req-123"));
+        assert_eq!(row["attributes"]["status"], json!(200));
+    }
+}

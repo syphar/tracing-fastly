@@ -71,21 +71,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::RecordWriter;
     use serde_json::json;
-
-    #[derive(Default)]
-    struct RecordWriter(Vec<Vec<u8>>);
-
-    impl Write for RecordWriter {
-        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-            self.0.push(bytes.to_vec());
-            Ok(bytes.len())
-        }
-
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
 
     #[test]
     fn ndjson_row_uses_one_write_without_a_newline() {
@@ -93,7 +80,10 @@ mod tests {
 
         write_ndjson_row(&mut writer, &json!({ "message": "hello" })).unwrap();
 
-        assert_eq!(writer.0, [br#"{"message":"hello"}"#.to_vec()]);
+        assert_eq!(
+            *writer.records().unwrap(),
+            [br#"{"message":"hello"}"#.to_vec()]
+        );
     }
 
     #[test]
@@ -103,7 +93,7 @@ mod tests {
         writer.write(&json!({ "message": "hello" })).unwrap();
 
         assert_eq!(
-            writer.writer.lock().unwrap().0,
+            *writer.writer.lock().unwrap().records().unwrap(),
             [br#"{"message":"hello"}"#.to_vec()]
         );
     }
