@@ -2,10 +2,7 @@ use serde::Serializer;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Serialize a `SystemTime` as unix milliseconds (u128).
-pub(crate) fn ser_unix_milliseconds<S>(
-    timestamp: &SystemTime,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
+pub fn ser_unix_milliseconds<S>(timestamp: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {

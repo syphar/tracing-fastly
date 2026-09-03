@@ -3,11 +3,7 @@
 use fastly::log::Endpoint;
 use serde::Serialize;
 use serde_json::{Map, Value};
-use std::{
-    io::Write,
-    sync::Mutex,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{io::Write, sync::Mutex, time::SystemTime};
 use tracing::Level;
 use tracing_fastly::{
     StructuredEvent, StructuredEventLayer, StructuredEventSink, serialize::write_ndjson_row,
@@ -17,7 +13,8 @@ use tracing_subscriber::{filter::LevelFilter, prelude::*};
 /// The exact wire format expected by this example provider.
 #[derive(Serialize)]
 struct CustomLog<'a> {
-    occurred_at_ms: u128,
+    #[serde(serialize_with = "tracing_fastly::serialize::system_time::ser_unix_milliseconds")]
+    occurred_at_ms: SystemTime,
     severity: &'static str,
     body: &'a str,
     attributes: &'a Map<String, Value>,
@@ -41,7 +38,7 @@ where
 {
     fn emit(&self, event: &StructuredEvent<'_>) {
         let row = CustomLog {
-            occurred_at_ms: unix_milliseconds(event.timestamp()),
+            occurred_at_ms: event.timestamp(),
             severity: severity(event.level()),
             body: event.message(),
             // This already contains both event fields and inherited span fields.
@@ -57,13 +54,6 @@ where
             eprintln!("failed to write custom log: {error}");
         }
     }
-}
-
-fn unix_milliseconds(timestamp: SystemTime) -> u128 {
-    timestamp
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
-        .unwrap_or(0)
 }
 
 fn severity(level: Level) -> &'static str {
