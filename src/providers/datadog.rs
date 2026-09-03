@@ -1,7 +1,4 @@
-use crate::{
-    StructuredEvent, StructuredEventSink,
-    serialize::{self, write_ndjson_row},
-};
+use crate::{StructuredEvent, StructuredEventSink, serialize};
 use fastly::log::Endpoint;
 use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
@@ -89,7 +86,7 @@ pub struct TraceLog<'a> {
     pub timestamp: SystemTime,
     pub message: &'a str,
     pub service: &'a str,
-    #[serde(serialize_with = "ser_level")]
+    #[serde(serialize_with = "ser_tracing_level")]
     pub status: Level,
     pub fields: &'a Map<String, Value>,
 }
@@ -136,7 +133,7 @@ impl StructuredEventSink for TraceSink {
             fields: event.fields,
         };
 
-        if let Err(error) = write_ndjson_row(&self.endpoint, &row) {
+        if let Err(error) = serialize::write_ndjson_row(&self.endpoint, &row) {
             eprintln!("failed to write Datadog trace log: {error}");
         }
     }
@@ -145,7 +142,7 @@ impl StructuredEventSink for TraceSink {
 /// serialize a `tracing::Level` with datadog convention:
 /// * lower-case
 /// * trace becomes debug
-fn ser_level<S>(level: &Level, serializer: S) -> Result<S::Ok, S::Error>
+fn ser_tracing_level<S>(level: &Level, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {

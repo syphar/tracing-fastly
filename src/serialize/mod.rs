@@ -13,7 +13,6 @@
 //! ```
 
 pub mod duration;
-pub mod http;
 pub mod system_time;
 
 use serde::Serialize;
