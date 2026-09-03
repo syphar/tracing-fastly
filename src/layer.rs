@@ -20,6 +20,7 @@ pub struct StructuredEventLayer<K> {
 }
 
 impl<K> StructuredEventLayer<K> {
+    /// Creates a layer that forwards normalized events to `sink`.
     pub fn new(sink: K) -> Self {
         Self { sink }
     }

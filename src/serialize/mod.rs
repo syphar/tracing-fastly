@@ -1,5 +1,6 @@
 //! Collection of serde serialization helpers.
 
+/// Serde adapters for [`std::time::SystemTime`].
 pub mod system_time;
 
 use serde::Serialize;
@@ -18,6 +19,7 @@ pub struct NdjsonWriter<W> {
 }
 
 impl<W> NdjsonWriter<W> {
+    /// Creates a synchronized NDJSON writer around `writer`.
     pub fn new(writer: W) -> Self {
         Self {
             writer: Mutex::new(writer),

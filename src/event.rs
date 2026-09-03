@@ -5,10 +5,11 @@ use tracing::{
     field::{Field, Visit},
 };
 
-/// Structured Event
+/// A normalized tracing event passed to a [`StructuredEventSink`].
 ///
-/// Will be populated with the collected info from tracing spans, records and events,
-/// then handed to the `StructuredEventSink`.
+/// The event borrows its message and effective fields for the duration of
+/// [`StructuredEventSink::emit`]. Use the accessor methods to construct an
+/// owned provider-specific record when necessary.
 pub struct StructuredEvent<'a> {
     pub(crate) timestamp: SystemTime,
     pub(crate) level: Level,
@@ -49,6 +50,7 @@ impl<'a> StructuredEvent<'a> {
 
 /// Receives normalized tracing events for conversion into an application-defined format.
 pub trait StructuredEventSink: Send + Sync + 'static {
+    /// Emits one normalized event in the sink's provider-specific format.
     fn emit(&self, event: &StructuredEvent<'_>);
 }
 

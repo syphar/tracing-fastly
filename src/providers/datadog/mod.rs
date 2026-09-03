@@ -1,3 +1,9 @@
+//! A sink for sending structured logs to Datadog through a Fastly endpoint.
+//!
+//! The serialized records use Datadog's reserved `ddsource`, `ddtags`,
+//! `hostname`, `message`, `service`, `status`, and `timestamp` attributes.
+//! Effective tracing fields are nested under `fields`.
+
 mod model;
 
 use crate::{StructuredEvent, StructuredEventSink, serialize::NdjsonWriter};
@@ -14,6 +20,10 @@ pub struct TraceSink<W> {
 }
 
 impl<W> TraceSink<W> {
+    /// Creates a Datadog sink writing to `writer` for the given service.
+    ///
+    /// The source defaults to `fastly`, tags default to an empty string, and
+    /// the hostname is read from the Fastly Compute runtime.
     pub fn new(writer: W, service: impl Into<String>) -> Self {
         Self {
             writer: NdjsonWriter::new(writer),
@@ -24,11 +34,13 @@ impl<W> TraceSink<W> {
         }
     }
 
+    /// Overrides the value of Datadog's reserved `ddsource` attribute.
     pub fn with_source(mut self, source: impl Into<String>) -> Self {
         self.source = source.into();
         self
     }
 
+    /// Sets Datadog tags in its comma-separated `key:value` wire format.
     pub fn with_tags(mut self, tags: impl Into<String>) -> Self {
         self.tags = tags.into();
         self

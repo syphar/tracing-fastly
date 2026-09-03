@@ -15,7 +15,10 @@ pub struct RecordWriter {
 }
 
 impl RecordWriter {
-    /// Returns the captured writes in the order they occurred.
+    /// Locks and returns the captured writes in the order they occurred.
+    ///
+    /// Returns a poisoned-lock error if another thread panicked while holding
+    /// the record collection's lock.
     pub fn records(&self) -> LockResult<MutexGuard<'_, Vec<Vec<u8>>>> {
         self.records.lock()
     }

@@ -1,7 +1,11 @@
+//! Serde adapters for serializing [`SystemTime`](std::time::SystemTime).
+
 use serde::Serializer;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Serialize a `SystemTime` as unix milliseconds (u128).
+/// Serializes a [`SystemTime`] as unsigned milliseconds since the Unix epoch.
+///
+/// Timestamps before the Unix epoch are serialized as zero.
 pub fn ser_unix_milliseconds<S>(timestamp: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
