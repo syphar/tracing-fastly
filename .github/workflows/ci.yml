@@ -16,11 +16,13 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      - name: install WASM target, clippy & rustfmt
+        run: |
+          rustup target add wasm32-wasip1
+          rustup component add clippy rustfmt
+
       - name: restore build & cargo cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-
-      - name: install clippy & rustfmt
-        run: rustup component add clippy rustfmt
 
       - uses: jdx/mise-action@5228313ee0372e111a38da051671ca30fc5a96db # v3.6.3
 
@@ -31,6 +33,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: install WASM target, clippy & rustfmt
+        run: |
+          rustup target add wasm32-wasip1
+          rustup component add clippy rustfmt
 
       - name: restore build & cargo cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
