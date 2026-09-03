@@ -1,6 +1,6 @@
 use crate::{
     StructuredEvent, StructuredEventSink,
-    serialize::{ser_unix_milliseconds, write_ndjson_row},
+    serialize::{self, write_ndjson_row},
 };
 use fastly::log::Endpoint;
 use serde::{Serialize, Serializer};
@@ -85,7 +85,7 @@ pub struct TraceLog<'a> {
     pub ddsource: &'a str,
     pub ddtags: &'a Tags,
     pub hostname: &'a str,
-    #[serde(serialize_with = "ser_unix_milliseconds")]
+    #[serde(serialize_with = "serialize::system_time::ser_unix_milliseconds")]
     pub timestamp: SystemTime,
     pub message: &'a str,
     pub service: &'a str,
