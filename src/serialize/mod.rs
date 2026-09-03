@@ -1,3 +1,17 @@
+//! Collection of serde serialization helpers.
+//!
+//! Used by the different providers in the [`crate::providers`] module.
+//!
+//! Usable with `serialize_with`:
+//!
+//! ```rust
+//! #[derive(Debug, Serialize)]
+//! pub struct TraceLog {
+//!    #[serde(serialize_with = "ser_unix_milliseconds")]
+//!    pub timestamp: SystemTime,
+//! }
+//! ```
+
 use serde::{Serialize, Serializer};
 use std::{
     io::Write,
@@ -16,6 +30,7 @@ where
     writer.write_all(b"\n").map_err(serde_json::Error::io)
 }
 
+/// Serialize a `SystemTime` as unix seconds (float)
 pub fn ser_unix_seconds<S: Serializer>(t: &SystemTime, s: S) -> Result<S::Ok, S::Error> {
     let secs = t
         .duration_since(UNIX_EPOCH)
@@ -24,6 +39,7 @@ pub fn ser_unix_seconds<S: Serializer>(t: &SystemTime, s: S) -> Result<S::Ok, S:
     s.serialize_f64(secs)
 }
 
+/// Serialize a `SystemTime` as milliseconds.
 pub fn ser_duration_ms<S: Serializer>(duration: &Duration, s: S) -> Result<S::Ok, S::Error> {
     s.serialize_f64(duration.as_secs_f64() * 1000.0)
 }

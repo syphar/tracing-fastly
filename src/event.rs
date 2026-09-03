@@ -5,6 +5,10 @@ use tracing::{
     field::{Field, Visit},
 };
 
+/// Structured Event
+///
+/// Will be populated with the collected info from tracing spans, records and events,
+/// then handed to the `StructuredEventSink`.
 pub struct StructuredEvent<'a> {
     pub timestamp: SystemTime,
     pub level: Level,
@@ -15,12 +19,6 @@ pub struct StructuredEvent<'a> {
     /// from its active span hierarchy. When names collide, event fields take
     /// precedence, followed by the innermost span and then its ancestors.
     pub fields: &'a Map<String, Value>,
-}
-
-impl StructuredEvent<'_> {
-    pub fn payload(&self) -> Option<&Map<String, Value>> {
-        (!self.fields.is_empty()).then_some(self.fields)
-    }
 }
 
 /// Receives normalized tracing events for conversion into an application-defined format.
@@ -129,17 +127,5 @@ mod tests {
         assert_eq!(v.fields.len(), 1);
 
         assert!(!v.fields.contains_key("message"));
-    }
-
-    #[test]
-    fn payload_is_none_when_empty() {
-        let fields = Map::new();
-        let ev = StructuredEvent {
-            timestamp: SystemTime::UNIX_EPOCH,
-            level: Level::INFO,
-            message: "hi",
-            fields: &fields,
-        };
-        assert!(ev.payload().is_none());
     }
 }
