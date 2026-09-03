@@ -1,4 +1,9 @@
-lint: 
-  cargo fmt --check
-  cargo clippy --all -- -Dwarnings
-  cargo sort
+format check="":
+    cargo fmt {{ check }}
+    just --fmt {{ check }}
+    cargo sort {{ check }}
+
+lint:
+    cargo clippy --all -- -Dwarnings
+    cargo machete
+    cargo audit
