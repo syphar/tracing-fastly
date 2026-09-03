@@ -3,5 +3,5 @@ mod layer;
 
 pub mod serialize;
 
-pub use event::{CorrelationFields, EventSink, StructuredEvent};
+pub use event::{CorrelationFields, StructuredEvent, StructuredEventSink};
 pub use layer::CorrelationLayer;

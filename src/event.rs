@@ -19,7 +19,8 @@ impl StructuredEvent<'_> {
     }
 }
 
-pub trait EventSink: Send + Sync + 'static {
+/// Receives normalized tracing events for conversion into an application-defined format.
+pub trait StructuredEventSink: Send + Sync + 'static {
     fn emit(&self, event: &StructuredEvent<'_>);
 }
 

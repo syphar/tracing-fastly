@@ -2,7 +2,7 @@ use fastly::log::Endpoint;
 use serde::Serialize;
 use serde_with::{DisplayFromStr, serde_as, skip_serializing_none};
 use std::{sync::Mutex, time::SystemTime};
-use tracing_fastly::{CorrelationLayer, EventSink, StructuredEvent, serialize};
+use tracing_fastly::{CorrelationLayer, StructuredEvent, StructuredEventSink, serialize};
 use tracing_subscriber::prelude::*;
 
 fn setup_logging(service_name: &str) {
@@ -25,7 +25,7 @@ struct TraceSink {
     endpoint: Mutex<Endpoint>,
 }
 
-impl EventSink for TraceSink {
+impl StructuredEventSink for TraceSink {
     fn emit(&self, event: &StructuredEvent<'_>) {
         let payload = event
             .payload()
@@ -39,7 +39,9 @@ impl EventSink for TraceSink {
             message: event.message,
             payload: payload.as_ref(),
         };
-        serialize::write_ndjson_row(&self.endpoint, &row);
+        if let Err(error) = serialize::write_ndjson_row(&self.endpoint, &row) {
+            eprintln!("failed to write structured trace event: {error}");
+        }
     }
 }
 

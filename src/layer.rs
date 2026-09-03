@@ -1,4 +1,4 @@
-use crate::event::{CorrelationFields, EventSink, EventVisitor, StructuredEvent};
+use crate::event::{CorrelationFields, EventVisitor, StructuredEvent, StructuredEventSink};
 use std::time::SystemTime;
 use tracing::{
     Event, Subscriber,
@@ -23,11 +23,17 @@ impl<K> CorrelationLayer<K> {
         }
     }
 
+    /// Adds a span field to copy into each event's correlation fields.
+    ///
+    /// If multiple spans contain the field, the outermost span wins.
     pub fn correlate(mut self, name: &'static str) -> Self {
         self.correlate.push(name);
         self
     }
 
+    /// Adds span fields to copy into each event's correlation fields.
+    ///
+    /// If multiple spans contain the same field, the outermost span wins.
     pub fn correlate_all(mut self, names: impl IntoIterator<Item = &'static str>) -> Self {
         self.correlate.extend(names);
         self
@@ -72,7 +78,7 @@ impl Visit for CorrelationVisitor<'_> {
 impl<S, K> Layer<S> for CorrelationLayer<K>
 where
     S: Subscriber + for<'lookup> LookupSpan<'lookup>,
-    K: EventSink,
+    K: StructuredEventSink,
 {
     fn on_new_span(&self, attrs: &Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
         let Some(span) = ctx.span(id) else { return };
@@ -140,7 +146,7 @@ mod tests {
     #[derive(Clone, Default)]
     struct CaptureSink(Arc<Mutex<Option<Captured>>>);
 
-    impl EventSink for CaptureSink {
+    impl StructuredEventSink for CaptureSink {
         fn emit(&self, event: &StructuredEvent<'_>) {
             *self.0.lock().unwrap() = Some(Captured {
                 message: event.message.to_owned(),

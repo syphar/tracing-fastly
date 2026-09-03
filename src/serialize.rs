@@ -1,13 +1,16 @@
 use serde::{Serialize, Serializer, ser::Error as _};
-use std::time::Duration;
+use std::{io::Write, time::Duration};
 use tracing_subscriber::fmt::MakeWriter;
 
-pub fn write_ndjson_row<W, T>(writer: &W, row: &T)
+/// Serializes one value as JSON followed by a newline.
+pub fn write_ndjson_row<W, T>(writer: &W, row: &T) -> serde_json::Result<()>
 where
     W: for<'a> MakeWriter<'a>,
     T: Serialize,
 {
-    let _ = serde_json::to_writer(writer.make_writer(), row);
+    let mut writer = writer.make_writer();
+    serde_json::to_writer(&mut writer, row)?;
+    writer.write_all(b"\n").map_err(serde_json::Error::io)
 }
 
 pub fn ser_unix_seconds<S: Serializer>(t: &std::time::SystemTime, s: S) -> Result<S::Ok, S::Error> {
@@ -48,6 +51,7 @@ mod tests {
     use super::*;
     use serde::Serialize;
     use serde_json::json;
+    use std::sync::Mutex;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -135,5 +139,14 @@ mod tests {
 
         let v = serde_json::to_value(Row { p: None }).unwrap();
         assert!(v["p"].is_null());
+    }
+
+    #[test]
+    fn ndjson_row_has_a_trailing_newline() {
+        let output = Mutex::new(Vec::new());
+
+        write_ndjson_row(&output, &json!({ "message": "hello" })).unwrap();
+
+        assert_eq!(&*output.lock().unwrap(), b"{\"message\":\"hello\"}\n");
     }
 }

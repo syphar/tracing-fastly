@@ -140,7 +140,9 @@ fn emit_access_log(
         fastly_pop: non_empty(fastly::compute_runtime::pop()),
         fastly_server: non_empty(fastly::compute_runtime::hostname()),
     };
-    serialize::write_ndjson_row(&|| endpoint.clone(), &row);
+    if let Err(error) = serialize::write_ndjson_row(&|| endpoint.clone(), &row) {
+        eprintln!("failed to write access log: {error}");
+    }
 }
 
 fn non_empty(s: &str) -> Option<&str> {
