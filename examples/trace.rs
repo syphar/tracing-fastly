@@ -2,10 +2,7 @@ use fastly::log::Endpoint;
 use std::sync::Mutex;
 use tracing_fastly::{
     CorrelationLayer, StructuredEvent, StructuredEventSink,
-    serialize::{
-        self,
-        datadog::{Tags, TraceLog},
-    },
+    serialize::{self, datadog},
 };
 use tracing_subscriber::prelude::*;
 
@@ -36,9 +33,9 @@ impl StructuredEventSink for TraceSink {
             fields.insert("request_id".to_owned(), request_id.into());
         }
 
-        let row = TraceLog {
+        let row = datadog::TraceLog {
             ddsource: "fastly",
-            ddtags: Tags::new().with("env", "production"),
+            ddtags: datadog::Tags::new().with("env", "production"),
             hostname: fastly::compute_runtime::hostname(),
             timestamp: event.timestamp,
             message: event.message.to_owned(),
