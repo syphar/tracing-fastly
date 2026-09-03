@@ -1,8 +1,6 @@
 mod model;
-mod tags;
 
 pub use model::TraceLog;
-pub use tags::{TagError, Tags};
 
 use crate::{StructuredEvent, StructuredEventSink, serialize};
 use fastly::log::Endpoint;
@@ -14,7 +12,7 @@ use tracing::Level;
 pub struct TraceSink {
     endpoint: Mutex<Endpoint>,
     source: String,
-    tags: Tags,
+    tags: String,
     service: String,
 }
 
@@ -23,7 +21,7 @@ impl TraceSink {
         Self {
             endpoint: Mutex::new(endpoint),
             source: "fastly".to_owned(),
-            tags: Tags::new(),
+            tags: String::new(),
             service: service.into(),
         }
     }
@@ -33,8 +31,8 @@ impl TraceSink {
         self
     }
 
-    pub fn with_tags(mut self, tags: Tags) -> Self {
-        self.tags = tags;
+    pub fn with_tags(mut self, tags: impl Into<String>) -> Self {
+        self.tags = tags.into();
         self
     }
 }
@@ -85,7 +83,7 @@ mod tests {
         fn serialized_status(level: Level) -> Value {
             serde_json::to_value(TraceLog {
                 ddsource: "fastly",
-                ddtags: &Tags::new(),
+                ddtags: "",
                 hostname: "host",
                 timestamp: UNIX_EPOCH,
                 message: "",

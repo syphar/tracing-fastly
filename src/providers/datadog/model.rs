@@ -1,4 +1,4 @@
-use super::{Tags, ser_tracing_level};
+use super::ser_tracing_level;
 use crate::serialize;
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -12,11 +12,11 @@ use tracing::Level;
 #[derive(Debug, Serialize)]
 pub struct TraceLog<'a> {
     pub ddsource: &'a str,
-    pub ddtags: &'a Tags,
+    pub ddtags: &'a str,
     pub hostname: &'a str,
     /// Milliseconds since the Unix epoch.
     /// Format / name:
-    /// https://docs.datadoghq.com/logs/log_configuration/processors/log_date_remapper/
+    /// <https://docs.datadoghq.com/logs/log_configuration/processors/log_date_remapper/>
     #[serde(serialize_with = "serialize::system_time::ser_unix_milliseconds")]
     pub timestamp: SystemTime,
     pub message: &'a str,
@@ -35,10 +35,9 @@ mod tests {
 
     #[test]
     fn trace_log_uses_datadog_reserved_fields_and_nests_event_fields() {
-        let tags = Tags::new().with("env", "production").unwrap();
         let row = TraceLog {
             ddsource: "fastly",
-            ddtags: &tags,
+            ddtags: "env:production",
             hostname: "cache-fra1234",
             timestamp: UNIX_EPOCH + Duration::from_millis(1_500),
             message: "handled request",
