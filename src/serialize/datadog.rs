@@ -1,7 +1,8 @@
-use crate::serialize::ser_unix_milliseconds;
+use crate::{StructuredEvent, StructuredEventSink, serialize::ser_unix_milliseconds};
+use fastly::log::Endpoint;
 use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
-use std::{fmt, time::SystemTime};
+use std::{fmt, sync::Mutex, time::SystemTime};
 use tracing::Level;
 
 /// A comma-separated collection of Datadog tags.
@@ -74,8 +75,8 @@ impl fmt::Display for Tags {
 
 /// A log entry using Datadog's reserved JSON attributes.
 ///
-/// Additional event fields are flattened into the entry so they remain directly
-/// searchable as Datadog attributes.
+/// Additional event fields are kept under `fields` to avoid collisions with
+/// Datadog's reserved attributes.
 #[derive(Debug, Serialize)]
 pub struct TraceLog<'a> {
     pub ddsource: &'a str,
@@ -87,8 +88,60 @@ pub struct TraceLog<'a> {
     pub service: &'a str,
     #[serde(serialize_with = "ser_level")]
     pub status: Level,
-    #[serde(flatten)]
     pub fields: Map<String, Value>,
+}
+
+/// Writes structured tracing events to a Fastly Datadog logging endpoint.
+pub struct TraceSink {
+    endpoint: Mutex<Endpoint>,
+    source: String,
+    tags: Tags,
+    service: String,
+}
+
+impl TraceSink {
+    pub fn new(endpoint: Endpoint, service: impl Into<String>) -> Self {
+        Self {
+            endpoint: Mutex::new(endpoint),
+            source: "fastly".to_owned(),
+            tags: Tags::new(),
+            service: service.into(),
+        }
+    }
+
+    pub fn with_source(mut self, source: impl Into<String>) -> Self {
+        self.source = source.into();
+        self
+    }
+
+    pub fn with_tags(mut self, tags: Tags) -> Self {
+        self.tags = tags;
+        self
+    }
+}
+
+impl StructuredEventSink for TraceSink {
+    fn emit(&self, event: &StructuredEvent<'_>) {
+        let mut fields = event.fields.clone();
+        for (name, value) in event.correlation.iter() {
+            fields.insert(name.to_owned(), value.into());
+        }
+
+        let row = TraceLog {
+            ddsource: &self.source,
+            ddtags: self.tags.clone(),
+            hostname: fastly::compute_runtime::hostname(),
+            timestamp: event.timestamp,
+            message: event.message.to_owned(),
+            service: &self.service,
+            status: event.level,
+            fields,
+        };
+
+        if let Err(error) = super::write_ndjson_row(&self.endpoint, &row) {
+            eprintln!("failed to write Datadog trace log: {error}");
+        }
+    }
 }
 
 fn ser_level<S>(level: &Level, serializer: S) -> Result<S::Ok, S::Error>
@@ -112,7 +165,7 @@ mod tests {
     use std::time::UNIX_EPOCH;
 
     #[test]
-    fn trace_log_uses_datadog_reserved_fields_and_flattens_event_fields() {
+    fn trace_log_uses_datadog_reserved_fields_and_nests_event_fields() {
         let row = TraceLog {
             ddsource: "fastly",
             ddtags: Tags::new().with("env", "production"),
@@ -139,8 +192,10 @@ mod tests {
                 "message": "handled request",
                 "service": "docs.rs fastly WASM",
                 "status": "info",
-                "backend": "origin",
-                "http_status": 200,
+                "fields": {
+                    "backend": "origin",
+                    "http_status": 200,
+                },
             })
         );
     }
