@@ -9,6 +9,11 @@ pub struct StructuredEvent<'a> {
     pub timestamp: SystemTime,
     pub level: Level,
     pub message: &'a str,
+    /// The event's effective fields.
+    ///
+    /// This combines fields recorded directly on the event with fields inherited
+    /// from its active span hierarchy. When names collide, event fields take
+    /// precedence, followed by the innermost span and then its ancestors.
     pub fields: &'a Map<String, Value>,
 }
 

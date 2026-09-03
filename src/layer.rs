@@ -11,6 +11,11 @@ use tracing_subscriber::{
     registry::LookupSpan,
 };
 
+/// Produces normalized events with a self-contained set of effective fields.
+///
+/// Fields from the active span hierarchy are inherited automatically. When the
+/// same name occurs more than once, an event field wins over a span field, and
+/// an inner span wins over an outer span.
 pub struct StructuredEventLayer<K> {
     sink: K,
 }
@@ -88,7 +93,10 @@ where
         event.record(&mut visitor);
 
         if let Some(scope) = ctx.event_scope(event) {
-            for span in scope.from_root() {
+            // `Scope` iterates from the leaf towards the root. Since event fields
+            // are already present and occupied entries are preserved, this gives
+            // precedence to the event, then inner spans, then outer spans.
+            for span in scope {
                 if let Some(state) = span.extensions().get::<SpanState>() {
                     for (name, value) in &state.values {
                         visitor
@@ -174,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    fn outermost_span_wins_for_duplicate_names() {
+    fn innermost_span_wins_for_duplicate_names() {
         let c = capture(|| {
             let outer = info_span!("req", request_id = "root-id");
             let _outer_guard = outer.enter();
@@ -182,7 +190,7 @@ mod tests {
             let _inner_guard = inner.enter();
             tracing::info!("hello");
         });
-        assert_eq!(c.fields["request_id"], serde_json::json!("root-id"));
+        assert_eq!(c.fields["request_id"], serde_json::json!("inner-id"));
         assert_eq!(c.fields["operation"], serde_json::json!("lookup"));
     }
 
