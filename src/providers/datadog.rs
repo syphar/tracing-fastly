@@ -132,7 +132,7 @@ impl StructuredEventSink for TraceSink {
             ddtags: &self.tags,
             hostname: fastly::compute_runtime::hostname(),
             timestamp: event.timestamp,
-            message: &event.message,
+            message: event.message,
             service: &self.service,
             status: event.level,
             fields,
@@ -180,10 +180,10 @@ mod tests {
     fn trace_log_uses_datadog_reserved_fields_and_nests_event_fields() {
         let row = TraceLog {
             ddsource: "fastly",
-            ddtags: Tags::new().with("env", "production"),
+            ddtags: &Tags::new().with("env", "production"),
             hostname: "cache-fra1234",
             timestamp: UNIX_EPOCH + Duration::from_millis(1_500),
-            message: "handled request".to_owned(),
+            message: "handled request",
             service: "docs.rs fastly WASM",
             status: Level::INFO,
             fields: [
@@ -217,10 +217,10 @@ mod tests {
         fn serialized_status(level: Level) -> Value {
             serde_json::to_value(TraceLog {
                 ddsource: "fastly",
-                ddtags: Tags::new(),
+                ddtags: &Tags::new(),
                 hostname: "host",
                 timestamp: UNIX_EPOCH,
-                message: String::new(),
+                message: "",
                 service: "service",
                 status: level,
                 fields: Map::new(),
