@@ -89,7 +89,6 @@ pub struct TraceLog<'a> {
     #[serde(serialize_with = "ser_level")]
     pub status: Level,
     pub fields: Map<String, Value>,
-    pub span: Map<String, Value>,
 }
 
 /// Writes structured tracing events to a Fastly Datadog logging endpoint.
@@ -123,6 +122,8 @@ impl TraceSink {
 
 impl StructuredEventSink for TraceSink {
     fn emit(&self, event: &StructuredEvent<'_>) {
+        let fields = merge_fields(&event.span_fields.values, event.fields);
+
         let row = TraceLog {
             ddsource: &self.source,
             ddtags: self.tags.clone(),
@@ -131,14 +132,22 @@ impl StructuredEventSink for TraceSink {
             message: event.message.to_owned(),
             service: &self.service,
             status: event.level,
-            fields: event.fields.clone(),
-            span: event.span_fields.values.clone(),
+            fields,
         };
 
         if let Err(error) = super::write_ndjson_row(&self.endpoint, &row) {
             eprintln!("failed to write Datadog trace log: {error}");
         }
     }
+}
+
+fn merge_fields(
+    span_fields: &Map<String, Value>,
+    event_fields: &Map<String, Value>,
+) -> Map<String, Value> {
+    let mut fields = span_fields.clone();
+    fields.extend(event_fields.clone());
+    fields
 }
 
 fn ser_level<S>(level: &Level, serializer: S) -> Result<S::Ok, S::Error>
@@ -177,9 +186,6 @@ mod tests {
             ]
             .into_iter()
             .collect(),
-            span: [("request_id".to_owned(), json!("req-123"))]
-                .into_iter()
-                .collect(),
         };
 
         assert_eq!(
@@ -195,9 +201,6 @@ mod tests {
                 "fields": {
                     "backend": "origin",
                     "http_status": 200,
-                },
-                "span": {
-                    "request_id": "req-123",
                 },
             })
         );
@@ -215,7 +218,6 @@ mod tests {
                 service: "service",
                 status: level,
                 fields: Map::new(),
-                span: Map::new(),
             })
             .unwrap()["status"]
                 .clone()
@@ -238,6 +240,35 @@ mod tests {
         assert_eq!(
             serde_json::to_value(tags).unwrap(),
             json!("env:production,version:1.2.3,canary")
+        );
+    }
+
+    #[test]
+    fn span_and_event_fields_share_one_namespace() {
+        let span_fields = [
+            ("request_id".to_owned(), json!("req-123")),
+            ("route".to_owned(), json!("/crates/:name")),
+            ("backend".to_owned(), json!("span-backend")),
+        ]
+        .into_iter()
+        .collect();
+        let event_fields = [
+            ("backend".to_owned(), json!("event-backend")),
+            ("status".to_owned(), json!(200)),
+        ]
+        .into_iter()
+        .collect();
+
+        assert_eq!(
+            merge_fields(&span_fields, &event_fields),
+            [
+                ("request_id".to_owned(), json!("req-123")),
+                ("route".to_owned(), json!("/crates/:name")),
+                ("backend".to_owned(), json!("event-backend")),
+                ("status".to_owned(), json!(200)),
+            ]
+            .into_iter()
+            .collect()
         );
     }
 }
