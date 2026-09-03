@@ -21,8 +21,6 @@ jobs:
         run: rustup components add clippy rustfmt
 
       - uses: jdx/mise-action@v3
-        with:
-          cache: true
 
       - run: just lint
 
@@ -36,7 +34,5 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - uses: jdx/mise-action@v3
-        with:
-          cache: true
 
       - run: just test
