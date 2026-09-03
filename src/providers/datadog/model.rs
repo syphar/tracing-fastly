@@ -14,6 +14,9 @@ pub struct TraceLog<'a> {
     pub ddsource: &'a str,
     pub ddtags: &'a Tags,
     pub hostname: &'a str,
+    /// Milliseconds since the Unix epoch.
+    /// Format / name:
+    /// https://docs.datadoghq.com/logs/log_configuration/processors/log_date_remapper/
     #[serde(serialize_with = "serialize::system_time::ser_unix_milliseconds")]
     pub timestamp: SystemTime,
     pub message: &'a str,
