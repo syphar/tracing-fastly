@@ -12,6 +12,4 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3.16", default-features = false, features = ["fmt", "registry"] }
 
 [dev-dependencies]
-pretty_assertions = "1.4.1"
-serde_with = "3.21.0"
 tracing-subscriber = { version = "0.3.16", default-features = false, features = ["fmt", "env-filter"] }
