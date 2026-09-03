@@ -3,6 +3,9 @@ name = "tracing-fastly"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+testing = []
+
 [dependencies]
 fastly = "0.13"
 serde = { version = "1.0", features = ["derive"] }

@@ -72,7 +72,7 @@ fn main() {
     tracing::info!(backend = "origin", status = 200, "handled request");
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "testing"))]
 mod tests {
     use super::*;
     use serde_json::json;
