@@ -1,16 +1,4 @@
 //! Collection of serde serialization helpers.
-//!
-//! Used by the different providers in the [`crate::providers`] module.
-//!
-//! Usable with `serialize_with`:
-//!
-//! ```rust
-//! #[derive(Debug, Serialize)]
-//! pub struct TraceLog {
-//!    #[serde(serialize_with = "system_time::ser_unix_milliseconds")]
-//!    pub timestamp: SystemTime,
-//! }
-//! ```
 
 pub mod duration;
 pub mod system_time;
