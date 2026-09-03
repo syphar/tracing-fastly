@@ -16,6 +16,7 @@ format check="":
 lint:
     cargo clippy --locked -- -D warnings
     actionlint
+    pinact run {{ if env("CI", "") == "true" { "-check" } else { "" } }}
     cargo machete
     cargo audit
 
