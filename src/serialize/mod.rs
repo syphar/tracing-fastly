@@ -1,4 +1,4 @@
-use serde::{Serialize, Serializer, ser::Error as _};
+use serde::{Serialize, Serializer};
 use std::{
     io::Write,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -44,20 +44,6 @@ pub fn ser_http_status<S: Serializer>(
     s: S,
 ) -> Result<S::Ok, S::Error> {
     s.serialize_u16(status.as_u16())
-}
-
-pub fn ser_json_as_string<T, S>(v: &Option<T>, s: S) -> Result<S::Ok, S::Error>
-where
-    T: Serialize,
-    S: Serializer,
-{
-    match v {
-        Some(val) => {
-            let encoded = serde_json::to_string(val).map_err(S::Error::custom)?;
-            s.serialize_str(&encoded)
-        }
-        None => s.serialize_none(),
-    }
 }
 
 #[cfg(test)]
@@ -123,35 +109,6 @@ mod tests {
         .unwrap();
         assert_eq!(v["s"], json!(404));
         assert!(v["s"].is_number());
-    }
-
-    #[test]
-    fn json_payload_is_a_string_not_an_object() {
-        #[derive(Serialize)]
-        struct Row<'a> {
-            #[serde(serialize_with = "ser_json_as_string")]
-            p: Option<&'a serde_json::Value>,
-        }
-        let payload = json!({ "k": 1 });
-        let v = serde_json::to_value(Row { p: Some(&payload) }).unwrap();
-
-        let s = v["p"].as_str().expect("payload must be a string");
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(s).unwrap(),
-            json!({ "k": 1 })
-        );
-    }
-
-    #[test]
-    fn json_payload_none_serializes_as_null() {
-        #[derive(Serialize)]
-        struct Row<'a> {
-            #[serde(serialize_with = "ser_json_as_string")]
-            p: Option<&'a serde_json::Value>,
-        }
-
-        let v = serde_json::to_value(Row { p: None }).unwrap();
-        assert!(v["p"].is_null());
     }
 
     #[test]
