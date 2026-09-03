@@ -1,12 +1,12 @@
 mod model;
 
-use crate::{StructuredEvent, StructuredEventSink, serialize};
+use crate::{StructuredEvent, StructuredEventSink, serialize::NdjsonWriter};
 use model::TraceLog;
-use std::{io::Write, sync::Mutex};
+use std::io::Write;
 
 /// Writes structured tracing events to a Fastly Datadog logging endpoint.
 pub struct TraceSink<W> {
-    writer: Mutex<W>,
+    writer: NdjsonWriter<W>,
     source: String,
     tags: String,
     service: String,
@@ -16,7 +16,7 @@ pub struct TraceSink<W> {
 impl<W> TraceSink<W> {
     pub fn new(writer: W, service: impl Into<String>) -> Self {
         Self {
-            writer: Mutex::new(writer),
+            writer: NdjsonWriter::new(writer),
             source: "fastly".to_owned(),
             tags: String::new(),
             service: service.into(),
@@ -51,11 +51,7 @@ where
             fields: event.fields(),
         };
 
-        let Ok(mut writer) = self.writer.lock() else {
-            eprintln!("failed to lock Datadog trace log writer");
-            return;
-        };
-        if let Err(error) = serialize::write_ndjson_row(&mut *writer, &row) {
+        if let Err(error) = self.writer.write(&row) {
             eprintln!("failed to write Datadog trace log: {error}");
         }
     }
@@ -91,7 +87,7 @@ mod tests {
         let writer = RecordWriter::default();
         let records = Arc::clone(&writer.0);
         let sink = TraceSink {
-            writer: Mutex::new(writer),
+            writer: NdjsonWriter::new(writer),
             source: "fastly".to_owned(),
             tags: "env:production".to_owned(),
             service: "service".to_owned(),

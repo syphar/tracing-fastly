@@ -3,10 +3,10 @@
 use fastly::log::Endpoint;
 use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
-use std::{io::Write, sync::Mutex, time::SystemTime};
+use std::{io::Write, time::SystemTime};
 use tracing::Level;
 use tracing_fastly::{
-    StructuredEvent, StructuredEventLayer, StructuredEventSink, serialize::write_ndjson_row,
+    StructuredEvent, StructuredEventLayer, StructuredEventSink, serialize::NdjsonWriter,
 };
 use tracing_subscriber::{filter::LevelFilter, prelude::*};
 
@@ -22,13 +22,13 @@ struct CustomLog<'a> {
 }
 
 struct CustomSink<W> {
-    writer: Mutex<W>,
+    writer: NdjsonWriter<W>,
 }
 
 impl<W> CustomSink<W> {
     fn new(writer: W) -> Self {
         Self {
-            writer: Mutex::new(writer),
+            writer: NdjsonWriter::new(writer),
         }
     }
 }
@@ -53,12 +53,7 @@ where
             attributes: event.fields(),
         };
 
-        let Ok(mut writer) = self.writer.lock() else {
-            eprintln!("failed to lock custom log writer");
-            return;
-        };
-
-        if let Err(error) = write_ndjson_row(&mut *writer, &row) {
+        if let Err(error) = self.writer.write(&row) {
             eprintln!("failed to write custom log: {error}");
         }
     }

@@ -3,7 +3,47 @@
 pub mod system_time;
 
 use serde::Serialize;
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    sync::Mutex,
+};
+
+/// A synchronized writer for structured NDJSON log records.
+///
+/// Each serialized value is passed to the underlying writer in exactly one
+/// [`Write::write`] call. This makes the writer suitable for Fastly logging
+/// endpoints, where each write represents one log record.
+pub struct NdjsonWriter<W> {
+    writer: Mutex<W>,
+}
+
+impl<W> NdjsonWriter<W> {
+    pub fn new(writer: W) -> Self {
+        Self {
+            writer: Mutex::new(writer),
+        }
+    }
+}
+
+impl<W> NdjsonWriter<W>
+where
+    W: Write,
+{
+    /// Serializes and writes one record.
+    pub fn write<T>(&self, row: &T) -> serde_json::Result<()>
+    where
+        T: Serialize,
+    {
+        let mut writer = self.writer.lock().map_err(|_| {
+            serde_json::Error::io(io::Error::new(
+                io::ErrorKind::Other,
+                "NDJSON writer lock poisoned",
+            ))
+        })?;
+
+        write_ndjson_row(&mut *writer, row)
+    }
+}
 
 /// Serializes one NDJSON row and emits it with exactly one write.
 ///
@@ -56,5 +96,17 @@ mod tests {
         write_ndjson_row(&mut writer, &json!({ "message": "hello" })).unwrap();
 
         assert_eq!(writer.0, [br#"{"message":"hello"}"#.to_vec()]);
+    }
+
+    #[test]
+    fn synchronized_writer_emits_a_row() {
+        let writer = NdjsonWriter::new(RecordWriter::default());
+
+        writer.write(&json!({ "message": "hello" })).unwrap();
+
+        assert_eq!(
+            writer.writer.lock().unwrap().0,
+            [br#"{"message":"hello"}"#.to_vec()]
+        );
     }
 }
