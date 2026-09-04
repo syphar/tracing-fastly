@@ -1,6 +1,20 @@
 [package]
 name = "tracing-fastly"
 version = "0.1.0"
+authors = ["Denis Cornehl <denis@cornehl.org>"]
+license = "MIT"
+repository = "https://github.com/syphar/tracing-fastly"
 edition = "2024"
 
+[features]
+testing = []
+
 [dependencies]
+fastly = "0.13"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.137"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3.16", default-features = false, features = ["fmt", "registry"] }
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3.16", default-features = false, features = ["fmt", "env-filter"] }

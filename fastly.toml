@@ -1,0 +1,10 @@
+# Local Fastly Compute configuration used when running this crate's WASI tests
+# with Viceroy. This library is not itself a deployable Compute service.
+authors = []
+description = "Local test configuration for tracing-fastly"
+language = "rust"
+manifest_version = 3
+name = "tracing-fastly"
+service_id = ""
+
+[local_server]
